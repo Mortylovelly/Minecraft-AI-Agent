@@ -1,5 +1,6 @@
 package com.mortylovelly.minecraftai.mixin.client;
 
+import com.mortylovelly.minecraftai.client.AiFreeCursor;
 import com.mortylovelly.minecraftai.client.AiLogOverlay;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
@@ -21,34 +22,40 @@ public abstract class MouseMixin {
 
     @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable = true)
     private void minecraftAiAgent$onMouseButton(long window, int button, int action, int modifiers, CallbackInfo ci) {
-        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || !AiLogOverlay.isOpen()) {
+        // Clear a drag capture even if a screen was opened or cursor mode changed mid-drag.
+        if (action == GLFW.GLFW_RELEASE && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && AiLogOverlay.mouseReleased(0.0, 0.0, button)) {
+            ci.cancel();
             return;
         }
 
-        // Always release a captured HUD interaction, even if the cursor mode changed mid-drag.
-        if (action == GLFW.GLFW_RELEASE) {
-            if (AiLogOverlay.mouseReleased(0.0, 0.0, button)) {
-                ci.cancel();
-            }
+        if (client.currentScreen != null || client.player == null || client.world == null) {
             return;
         }
 
-        if (action != GLFW.GLFW_PRESS
-                || client.currentScreen != null
-                || client.player == null
-                || client.world == null
-                || !isCursorAvailable(window)) {
+        boolean freeCursor = AiFreeCursor.isEnabled();
+        boolean logsOverlay = AiLogOverlay.isOpen();
+        if ((!freeCursor && !logsOverlay) || !isCursorAvailable(window)) {
             return;
         }
 
-        Window w = client.getWindow();
-        double[] cursor = getRawCursorPosition(window);
-        double mouseX = scaledX(cursor[0], w);
-        double mouseY = scaledY(cursor[1], w);
+        if (action == GLFW.GLFW_PRESS && button == GLFW.GLFW_MOUSE_BUTTON_LEFT && logsOverlay) {
+            Window w = client.getWindow();
+            double[] cursor = getRawCursorPosition(window);
+            AiLogOverlay.mouseClicked(
+                    scaledX(cursor[0], w),
+                    scaledY(cursor[1], w),
+                    button,
+                    w.getScaledWidth(),
+                    w.getScaledHeight()
+            );
+        }
 
-        // While the HUD is active, do not let a click pass through to attack/use the world.
-        AiLogOverlay.mouseClicked(mouseX, mouseY, button, w.getScaledWidth(), w.getScaledHeight());
-        ci.cancel();
+        // While free cursor mode or the Logs HUD owns the pointer, never click through
+        // into the world (attack, break blocks, place blocks or change the hotbar).
+        if (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_RELEASE) {
+            ci.cancel();
+        }
     }
 
     @Inject(method = "onCursorPos", at = @At("HEAD"), cancellable = true)
@@ -56,21 +63,23 @@ public abstract class MouseMixin {
         if (client.currentScreen != null
                 || client.player == null
                 || client.world == null
-                || !AiLogOverlay.isOpen()
+                || (!AiFreeCursor.isEnabled() && !AiLogOverlay.isOpen())
                 || !isCursorAvailable(window)) {
             return;
         }
 
-        Window w = client.getWindow();
-        AiLogOverlay.mouseDragged(
-                scaledX(cursorX, w),
-                scaledY(cursorY, w),
-                GLFW.GLFW_MOUSE_BUTTON_LEFT,
-                w.getScaledWidth(),
-                w.getScaledHeight()
-        );
+        if (AiLogOverlay.isOpen()) {
+            Window w = client.getWindow();
+            AiLogOverlay.mouseDragged(
+                    scaledX(cursorX, w),
+                    scaledY(cursorY, w),
+                    GLFW.GLFW_MOUSE_BUTTON_LEFT,
+                    w.getScaledWidth(),
+                    w.getScaledHeight()
+            );
+        }
 
-        // The external cursor toggle owns the pointer. Do not feed its movement into camera-look.
+        // Do not pass a free pointer into camera-look.
         ci.cancel();
     }
 
@@ -79,22 +88,24 @@ public abstract class MouseMixin {
         if (client.currentScreen != null
                 || client.player == null
                 || client.world == null
-                || !AiLogOverlay.isOpen()
+                || (!AiFreeCursor.isEnabled() && !AiLogOverlay.isOpen())
                 || !isCursorAvailable(window)) {
             return;
         }
 
-        Window w = client.getWindow();
-        double[] cursor = getRawCursorPosition(window);
-        AiLogOverlay.mouseScrolled(
-                scaledX(cursor[0], w),
-                scaledY(cursor[1], w),
-                vertical,
-                w.getScaledWidth(),
-                w.getScaledHeight()
-        );
+        if (AiLogOverlay.isOpen()) {
+            Window w = client.getWindow();
+            double[] cursor = getRawCursorPosition(window);
+            AiLogOverlay.mouseScrolled(
+                    scaledX(cursor[0], w),
+                    scaledY(cursor[1], w),
+                    vertical,
+                    w.getScaledWidth(),
+                    w.getScaledHeight()
+            );
+        }
 
-        // Do not switch the selected hotbar slot while the pointer is being used on the HUD.
+        // Keep the wheel from changing hotbar slots while it is being used as a pointer.
         ci.cancel();
     }
 

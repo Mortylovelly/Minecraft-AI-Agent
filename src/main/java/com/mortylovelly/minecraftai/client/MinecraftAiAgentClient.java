@@ -17,6 +17,7 @@ import java.time.Instant;
 
 public final class MinecraftAiAgentClient implements ClientModInitializer {
     private static KeyBinding openPanelKey;
+    private static KeyBinding toggleFreeCursorKey;
 
     @Override
     public void onInitializeClient() {
@@ -46,12 +47,21 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
             AiLogClient.resetForWorldJoin();
             AiAgentNetwork.subscribeToLogs();
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> AiAgentNetwork.onDisconnect());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            AiAgentNetwork.onDisconnect();
+            AiFreeCursor.reset();
+        });
 
         openPanelKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.minecraft_ai_agent.open_panel",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_RIGHT_SHIFT,
+                "category.minecraft_ai_agent"
+        ));
+        toggleFreeCursorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.minecraft_ai_agent.toggle_free_cursor",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_APOSTROPHE,
                 "category.minecraft_ai_agent"
         ));
 
@@ -84,6 +94,14 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
 
     private static void tick(MinecraftClient client) {
         AiLogOverlay.tick(client);
+
+        while (toggleFreeCursorKey.wasPressed()) {
+            if (client.currentScreen == null && client.player != null && client.world != null) {
+                AiFreeCursor.toggle(client);
+            }
+        }
+        AiFreeCursor.tick(client);
+
         while (openPanelKey.wasPressed()) {
             if (client.currentScreen == null && client.player != null) {
                 client.setScreen(new AiChatScreen());

@@ -1,4 +1,7 @@
 {
   "key.categories.minecraft_ai_agent": "Minecraft AI Agent",
-  "key.minecraft_ai_agent.open_panel": "Open AI Panel"
+  "key.minecraft_ai_agent.open_panel": "Open AI Panel",
+  "key.minecraft_ai_agent.toggle_free_cursor": "Toggle Free Cursor (Э)",
+  "message.minecraft_ai_agent.free_cursor_enabled": "Free cursor: enabled",
+  "message.minecraft_ai_agent.free_cursor_disabled": "Free cursor: disabled"
 }
