@@ -12,6 +12,6 @@ public final class AiUiSound {
     private static void play(float volume,float pitch){
         MinecraftClient client=MinecraftClient.getInstance();
         if(client.player==null)return;
-        client.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK.value(),volume,pitch));
+        client.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK,volume,pitch));
     }
 }

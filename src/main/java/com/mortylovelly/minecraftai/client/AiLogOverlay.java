@@ -12,7 +12,7 @@ import java.util.List;
 
 public final class AiLogOverlay {
     private static boolean open, visible, collapsed, dragging, resizing, pointerCaptured;
-    private static int x=-1, y=-1, width=390, height=230;
+    private static int x=-1, y=-1, width=360, height=210;
     private static int dragMouseX, dragMouseY, dragStartX, dragStartY, resizeStartWidth, resizeStartHeight;
     private static int filter=AiLogClient.FILTER_ALL, scrollOffset;
     private static long cachedRevision=-1L;
@@ -154,17 +154,17 @@ public final class AiLogOverlay {
             return true;
         }
         if(collapsed)return true;
+        if(mouseX>=right-17&&mouseY>=y+height-17){
+            resizing=true;dragging=false;
+            dragMouseX=(int)mouseX;dragMouseY=(int)mouseY;
+            resizeStartWidth=width;resizeStartHeight=height;
+            return true;
+        }
         int tabY=y+height-22;
         if(mouseY>=tabY&&mouseY<=y+height-3){
             int tabWidth=(width-24)/3;
             int selected=Math.max(0,Math.min(2,((int)mouseX-(x+8))/Math.max(1,tabWidth)));
             if(selected!=filter){filter=selected;scrollOffset=0;cachedRevision=-1L;AiUiSound.playClick();}
-            return true;
-        }
-        if(mouseX>=right-17&&mouseY>=y+height-17){
-            resizing=true;dragging=false;
-            dragMouseX=(int)mouseX;dragMouseY=(int)mouseY;
-            resizeStartWidth=width;resizeStartHeight=height;
             return true;
         }
         return true;
