@@ -1,5 +1,7 @@
 package com.mortylovelly.minecraftai;
 
+import com.mortylovelly.minecraftai.server.AiAgentEntityController;
+import com.mortylovelly.minecraftai.server.AiAgentServerNetworking;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.CommandManager;
@@ -10,12 +12,15 @@ public final class MinecraftAiAgent implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        AiAgentServerNetworking.register();
+        AiAgentEntityController.register();
+
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(CommandManager.literal("aiagent")
                         .then(CommandManager.literal("status")
                                 .executes(context -> {
                                     context.getSource().sendFeedback(
-                                            () -> Text.literal("Minecraft AI Agent: direct in-game AI service"),
+                                            () -> Text.literal("Minecraft AI Agent 0.3.0: server tools and client bridge active"),
                                             false
                                     );
                                     return 1;
