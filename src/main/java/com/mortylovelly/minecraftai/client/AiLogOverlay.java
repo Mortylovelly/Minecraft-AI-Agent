@@ -324,15 +324,15 @@ public final class AiLogOverlay {
         if(!open||button!=0)return false;
         if(dragging){
             float scale=drawScale();
-            x=dragStartX+Math.round((mouseX-dragMouseX)/scale);
-            y=dragStartY+Math.round((mouseY-dragMouseY)/scale);
+            x=dragStartX+(int)Math.round((mouseX-dragMouseX)/scale);
+            y=dragStartY+(int)Math.round((mouseY-dragMouseY)/scale);
             ensureBounds(screenWidth,screenHeight);
             return true;
         }
         if(resizing){
             float scale=drawScale();
-            width=resizeStartWidth+Math.round((mouseX-dragMouseX)/scale);
-            height=resizeStartHeight+Math.round((mouseY-dragMouseY)/scale);
+            width=resizeStartWidth+(int)Math.round((mouseX-dragMouseX)/scale);
+            height=resizeStartHeight+(int)Math.round((mouseY-dragMouseY)/scale);
             ensureBounds(screenWidth,screenHeight);
             cachedWidth=-1;
             return true;
