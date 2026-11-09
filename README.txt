@@ -1,4 +1,4 @@
-# Minecraft AI Agent 0.3.4
+# Minecraft AI Agent 0.3.5
 
 Minecraft 1.20.1 • Fabric • Java 17
 
@@ -8,7 +8,7 @@ A server-enabled Minecraft AI agent. The client provides the AI chat panel and m
 
 Press **Right Shift** by default. Configure a provider API key in the panel. The key is stored locally in the client's config directory; it is not sent to the Minecraft server.
 
-Click **Logs** in the AI panel to open the independent log HUD. The AI panel closes with a short animation and the log window stays on the game HUD; opening AI again with Right Shift temporarily hides Logs instead of drawing it over the AI screen. The log window starts at 120 × 70 GUI pixels, can be dragged from its title bar and resized from its bottom-right corner up to half of the screen. It switches to a compact layout at small sizes, can be collapsed and closed. Cursor ownership is left to the user's cursor-toggle mod; the Agent does not lock or unlock the mouse. Use that mod's cursor toggle to expose the pointer before clicking, moving or resizing the HUD. It uses an opaque grey background, slightly rounded corners and short open/close animations.
+Click **Logs** in the AI panel to open the independent log HUD. The AI panel closes with a short animation and the log window stays on the game HUD; opening AI again with Right Shift temporarily hides Logs instead of drawing it over the AI screen. The log window starts at 120 × 70 GUI pixels, can be dragged from its title bar and resized from its bottom-right corner up to half of the screen. It switches to a compact layout at small sizes, can be collapsed and closed. Cursor ownership is left to the user's cursor-toggle mod; the Agent does not lock or unlock the mouse. Use your G-key cursor toggle to expose the pointer before clicking, moving or resizing the HUD. The HUD reads the native GLFW cursor mode directly, so the external cursor toggle does not need to synchronize Minecraft's internal cursor-lock flag. It uses an opaque grey background, slightly rounded corners and short open/close animations.
 
 The log window has three filters:
 - **Logs** — all received server Log4j events.

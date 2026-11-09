@@ -34,6 +34,7 @@ public final class AiChatScreen extends Screen {
     private int panelTop;
     private int panelWidth;
     private int panelHeight;
+    private int contentVerticalOffset;
     private long animationStartedAt=System.nanoTime();
     private long closingStartedAt;
     private boolean closing;
@@ -69,6 +70,9 @@ public final class AiChatScreen extends Screen {
         panelLeft = (width - panelWidth) / 2;
         panelTop = (height - panelHeight) / 2;
 
+        boolean narrowProviders = panelWidth < 452;
+        contentVerticalOffset = narrowProviders ? 24 : 0;
+
         int keyY = panelTop + 31;
         apiKeyInput = new TextFieldWidget(textRenderer, panelLeft + 14, keyY, panelWidth - 140, 20, Text.literal("API key"));
         apiKeyInput.setMaxLength(500);
@@ -79,26 +83,65 @@ public final class AiChatScreen extends Screen {
                 .dimensions(panelLeft + panelWidth - 112, keyY, 98, 20).build());
 
         int providerY = panelTop + 58;
-        geminiButton = addDrawableChild(ButtonWidget.builder(Text.literal("Gemini"), button -> selectProvider("gemini"))
-                .dimensions(panelLeft + 14, providerY, 98, 20).build());
-        deepSeekButton = addDrawableChild(ButtonWidget.builder(Text.literal("DeepSeek"), button -> selectProvider("deepseek"))
-                .dimensions(panelLeft + 118, providerY, 98, 20).build());
-        groqButton = addDrawableChild(ButtonWidget.builder(Text.literal("Groq"), button -> selectProvider("groq"))
-                .dimensions(panelLeft + 222, providerY, 98, 20).build());
-        openRouterButton = addDrawableChild(ButtonWidget.builder(Text.literal("OpenRouter"), button -> selectProvider("openrouter"))
-                .dimensions(panelLeft + 326, providerY, 112, 20).build());
+        if (narrowProviders) {
+            int providerWidth = (panelWidth - 34) / 2;
+            geminiButton = addDrawableChild(ButtonWidget.builder(Text.literal("Gemini"), button -> selectProvider("gemini"))
+                    .dimensions(panelLeft + 14, providerY, providerWidth, 20).build());
+            deepSeekButton = addDrawableChild(ButtonWidget.builder(Text.literal("DeepSeek"), button -> selectProvider("deepseek"))
+                    .dimensions(panelLeft + 20 + providerWidth, providerY, providerWidth, 20).build());
+            groqButton = addDrawableChild(ButtonWidget.builder(Text.literal("Groq"), button -> selectProvider("groq"))
+                    .dimensions(panelLeft + 14, providerY + 24, providerWidth, 20).build());
+            openRouterButton = addDrawableChild(ButtonWidget.builder(Text.literal("OpenRouter"), button -> selectProvider("openrouter"))
+                    .dimensions(panelLeft + 20 + providerWidth, providerY + 24, providerWidth, 20).build());
+        } else {
+            geminiButton = addDrawableChild(ButtonWidget.builder(Text.literal("Gemini"), button -> selectProvider("gemini"))
+                    .dimensions(panelLeft + 14, providerY, 98, 20).build());
+            deepSeekButton = addDrawableChild(ButtonWidget.builder(Text.literal("DeepSeek"), button -> selectProvider("deepseek"))
+                    .dimensions(panelLeft + 118, providerY, 98, 20).build());
+            groqButton = addDrawableChild(ButtonWidget.builder(Text.literal("Groq"), button -> selectProvider("groq"))
+                    .dimensions(panelLeft + 222, providerY, 98, 20).build());
+            openRouterButton = addDrawableChild(ButtonWidget.builder(Text.literal("OpenRouter"), button -> selectProvider("openrouter"))
+                    .dimensions(panelLeft + 326, providerY, 112, 20).build());
+        }
 
-        testButton = addDrawableChild(ButtonWidget.builder(Text.literal("Проверить"), button -> testConnection())
-                .dimensions(panelLeft + panelWidth - 414, panelTop + 9, 90, 20).build());
-        logsButton = addDrawableChild(ButtonWidget.builder(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"), button -> {
-                    AiLogOverlay.toggle();
-                    if (AiLogOverlay.isOpen()) beginClose(false);
-                })
-                .dimensions(panelLeft + panelWidth - 320, panelTop + 9, 90, 20).build());
-        newChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Новый чат"), button -> newChat())
-                .dimensions(panelLeft + panelWidth - 226, panelTop + 9, 100, 20).build());
-        clearChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Очистить"), button -> clearChat())
-                .dimensions(panelLeft + panelWidth - 122, panelTop + 9, 108, 20).build());
+        int actionY = panelTop + 9;
+        if (panelWidth >= 560) {
+            testButton = addDrawableChild(ButtonWidget.builder(Text.literal("Проверить"), button -> testConnection())
+                    .dimensions(panelLeft + panelWidth - 414, actionY, 90, 20).build());
+            logsButton = addDrawableChild(ButtonWidget.builder(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"), button -> {
+                        AiLogOverlay.toggle();
+                        if (AiLogOverlay.isOpen()) beginClose(false);
+                    })
+                    .dimensions(panelLeft + panelWidth - 320, actionY, 90, 20).build());
+            newChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Новый чат"), button -> newChat())
+                    .dimensions(panelLeft + panelWidth - 226, actionY, 100, 20).build());
+            clearChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Очистить"), button -> clearChat())
+                    .dimensions(panelLeft + panelWidth - 122, actionY, 108, 20).build());
+        } else {
+            float fit = Math.min(1.0F, (panelWidth - 28) / 318.0F);
+            int testWidth = Math.round(80.0F * fit);
+            int logsWidth = Math.round(60.0F * fit);
+            int newChatWidth = Math.round(88.0F * fit);
+            int clearWidth = Math.round(78.0F * fit);
+            int gap = 3;
+            int actionWidth = testWidth + logsWidth + newChatWidth + clearWidth + gap * 3;
+            int actionX = panelLeft + (panelWidth - actionWidth) / 2;
+
+            testButton = addDrawableChild(ButtonWidget.builder(Text.literal("Проверить"), button -> testConnection())
+                    .dimensions(actionX, actionY, testWidth, 20).build());
+            actionX += testWidth + gap;
+            logsButton = addDrawableChild(ButtonWidget.builder(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"), button -> {
+                        AiLogOverlay.toggle();
+                        if (AiLogOverlay.isOpen()) beginClose(false);
+                    })
+                    .dimensions(actionX, actionY, logsWidth, 20).build());
+            actionX += logsWidth + gap;
+            newChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Новый чат"), button -> newChat())
+                    .dimensions(actionX, actionY, newChatWidth, 20).build());
+            actionX += newChatWidth + gap;
+            clearChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Очистить"), button -> clearChat())
+                    .dimensions(actionX, actionY, clearWidth, 20).build());
+        }
 
         int inputY = panelTop + panelHeight - 35;
         messageInput = new TextFieldWidget(textRenderer, panelLeft + 14, inputY, panelWidth - 206, 22, Text.literal("Сообщение"));
@@ -267,28 +310,55 @@ public final class AiChatScreen extends Screen {
 
         drawRoundedPanel(context,panelLeft,panelTop,panelLeft+panelWidth,panelTop+panelHeight,0xFF6C7783);
         drawRoundedPanel(context,panelLeft+1,panelTop+1,panelLeft+panelWidth-1,panelTop+panelHeight-1,0xFF424B55);
-        drawRoundedPanel(context,panelLeft+5,panelTop+5,panelLeft+panelWidth-5,panelTop+83,0xFF353E48);
-        context.fill(panelLeft+14,panelTop+84,panelLeft+panelWidth-14,panelTop+85,0xFF697582);
+        int headerBottom = 83 + contentVerticalOffset;
+        drawRoundedPanel(context,panelLeft+5,panelTop+5,panelLeft+panelWidth-5,panelTop+headerBottom,0xFF353E48);
+        context.fill(panelLeft+14,panelTop+headerBottom+1,panelLeft+panelWidth-14,panelTop+headerBottom+2,0xFF697582);
 
-        int titleMaxWidth=Math.max(36,panelWidth-14-414-14);
-        context.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(title.getString(),titleMaxWidth),
-                panelLeft+14,panelTop+10,0xFFFFFFFF);
+        if (panelWidth >= 560) {
+            int titleStartX = panelLeft + 14;
+            int firstActionX = panelLeft + panelWidth - 414;
+            int titleMaxWidth = Math.max(0, firstActionX - titleStartX - 8);
+            if (titleMaxWidth >= 12) {
+                context.drawTextWithShadow(textRenderer,
+                        textRenderer.trimToWidth(title.getString(), titleMaxWidth),
+                        titleStartX, panelTop + 10, 0xFFFFFFFF);
+            }
+        }
 
-        String statusText=waiting?buildAnimatedStatus():providerDisplayName()+" AI Agent";
-        String chatText="Чат: "+chatId.substring(0,Math.min(8,chatId.length()));
-        String memoryText="Память: "+AiAgentMemory.count(chatId);
-        int statusX=panelLeft+14;
-        int chatX=panelLeft+Math.min(210,panelWidth/3);
-        int memoryX=panelLeft+panelWidth-14-textRenderer.getWidth(memoryText);
-        int statusMax=Math.max(24,chatX-statusX-12);
-        int chatMax=Math.max(24,memoryX-chatX-12);
-        context.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(statusText,statusMax),
-                statusX,panelTop+96,waiting?0xFF8FE0A0:0xFFD0D6DE);
-        context.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(chatText,chatMax),
-                chatX,panelTop+96,0xFFADB6C1);
-        context.drawTextWithShadow(textRenderer,memoryText,memoryX,panelTop+96,0xFFD0D6DE);
+        String statusText = waiting ? buildAnimatedStatus() : providerDisplayName() + " AI Agent";
+        String chatText = "Чат: " + chatId.substring(0, Math.min(8, chatId.length()));
+        String memoryText = "Память: " + AiAgentMemory.count(chatId);
 
-        int chatTop=panelTop+116,chatBottom=panelTop+panelHeight-49,maxWidth=panelWidth-28,y=chatBottom;
+        int rowLeft = panelLeft + 14;
+        int rowWidth = Math.max(0, panelWidth - 28);
+        int statusColumn = rowWidth / 3;
+        int memoryColumn = Math.min(textRenderer.getWidth(memoryText), rowWidth / 4);
+        int columnGap = 8;
+        int chatColumn = Math.max(0, rowWidth - statusColumn - memoryColumn - columnGap * 2);
+        int chatX = rowLeft + statusColumn + columnGap;
+        int memoryX = chatX + chatColumn + columnGap;
+        int infoY = panelTop + 96 + contentVerticalOffset;
+
+        if (statusColumn > columnGap) {
+            context.drawTextWithShadow(textRenderer,
+                    textRenderer.trimToWidth(statusText, statusColumn - columnGap),
+                    rowLeft, infoY, waiting ? 0xFF8FE0A0 : 0xFFD0D6DE);
+        }
+        if (chatColumn > 0) {
+            context.drawTextWithShadow(textRenderer,
+                    textRenderer.trimToWidth(chatText, chatColumn),
+                    chatX, infoY, 0xFFADB6C1);
+        }
+        if (memoryColumn > 0) {
+            context.drawTextWithShadow(textRenderer,
+                    textRenderer.trimToWidth(memoryText, memoryColumn),
+                    memoryX, infoY, 0xFFD0D6DE);
+        }
+
+        int chatTop = panelTop + 116 + contentVerticalOffset;
+        int chatBottom = panelTop + panelHeight - 49;
+        int maxWidth = panelWidth - 28;
+        int y = chatBottom;
         outer:
         for(int i=messages.size()-1;i>=0;i--){
             String[] lines=wrap(messages.get(i),maxWidth);
