@@ -585,6 +585,7 @@ public final class AiAgentServerTools {
             case "attack_entity" -> {
                 Entity target = player.getServerWorld().getEntityById(integer(args, "target_entity_id"));
                 if (!(target instanceof LivingEntity living)) return error("Цель атаки не найдена или не является живой сущностью.");
+                if (target.squaredDistanceTo(player) > 96.0 * 96.0) return error("Цель атаки слишком далеко.");
                 mob.setTarget(living);
                 AiAgentEntityController.stop(mob);
             }
@@ -600,7 +601,7 @@ public final class AiAgentServerTools {
 
     private static JsonObject removeNpc(ServerPlayerEntity player, JsonObject args) {
         Entity entity = player.getServerWorld().getEntityById(integer(args, "entity_id"));
-        if (entity == null) return error("Сущность не найдена.");
+        if (!(entity instanceof MobEntity)) return error("Удалять через этот инструмент можно только мобов и NPC.");
         if (entity.squaredDistanceTo(player) > 128.0 * 128.0) return error("Сущность слишком далеко.");
         AiAgentEntityController.stop(entity);
         entity.discard();
@@ -660,7 +661,12 @@ public final class AiAgentServerTools {
     }
 
     private static long volume(int x1, int y1, int z1, int x2, int y2, int z2) {
-        return (long) (Math.abs(x2 - x1) + 1) * (Math.abs(y2 - y1) + 1) * (Math.abs(z2 - z1) + 1);
+        long dx = Math.abs((long) x2 - (long) x1) + 1L;
+        long dy = Math.abs((long) y2 - (long) y1) + 1L;
+        long dz = Math.abs((long) z2 - (long) z1) + 1L;
+        if (dx > MAX_FILL_BLOCKS || dy > MAX_FILL_BLOCKS || dz > MAX_FILL_BLOCKS) return MAX_FILL_BLOCKS + 1L;
+        if (dx * dy > MAX_FILL_BLOCKS / dz) return MAX_FILL_BLOCKS + 1L;
+        return dx * dy * dz;
     }
 
     private static int clamp(int value, int min, int max) {
