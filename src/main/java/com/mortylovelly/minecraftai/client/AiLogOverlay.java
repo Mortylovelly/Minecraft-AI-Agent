@@ -160,7 +160,7 @@ public final class AiLogOverlay {
 
         int tabY = y + height - 22;
         if (mouseY >= tabY && mouseY <= y + height - 3) {
-            int tabWidth = (width - 16) / 3;
+            int tabWidth = (width - 28) / 3;
             int selected = Math.max(0, Math.min(2, ((int) mouseX - (x + 8)) / Math.max(1, tabWidth)));
             if (selected != filter) {
                 filter = selected;
@@ -298,7 +298,7 @@ public final class AiLogOverlay {
 
     private static void drawTabs(DrawContext context, TextRenderer renderer, int tabY, int panelWidth) {
         String[] labels = {"Logs", "Custom logs", "Errors"};
-        int tabWidth = (panelWidth - 16) / 3;
+        int tabWidth = (panelWidth - 28) / 3;
         for (int i = 0; i < labels.length; i++) {
             int tabX = x + 8 + i * tabWidth;
             boolean active = filter == i;
