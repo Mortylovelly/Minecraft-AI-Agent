@@ -3,6 +3,7 @@ package com.mortylovelly.minecraftai.server;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -15,6 +16,8 @@ import java.util.UUID;
 public final class AiAgentServerNetworking {
     public static final Identifier TOOL_REQUEST = new Identifier("minecraft_ai_agent", "tool_request");
     public static final Identifier TOOL_RESPONSE = new Identifier("minecraft_ai_agent", "tool_response");
+    public static final Identifier LOG_SUBSCRIBE = new Identifier("minecraft_ai_agent", "log_subscribe");
+
     private static final Map<UUID, long[]> REQUEST_WINDOW = new HashMap<>();
 
     private AiAgentServerNetworking() {}
@@ -56,6 +59,22 @@ public final class AiAgentServerNetworking {
                 }
             });
         });
+
+        ServerPlayNetworking.registerGlobalReceiver(LOG_SUBSCRIBE, (server, player, handler, buffer, responseSender) -> {
+            final boolean subscribe;
+            try {
+                subscribe = buffer.readBoolean();
+            } catch (RuntimeException exception) {
+                return;
+            }
+            server.execute(() -> {
+                if (subscribe) AiAgentServerLogBridge.subscribe(player);
+                else AiAgentServerLogBridge.unsubscribe(player.getUuid());
+            });
+        });
+
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                AiAgentServerLogBridge.unsubscribe(handler.player.getUuid()));
     }
 
     private static boolean allowRequest(UUID playerId, long now) {
