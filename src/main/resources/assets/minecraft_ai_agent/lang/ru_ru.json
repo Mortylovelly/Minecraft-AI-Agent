@@ -1,7 +1,7 @@
 {
   "key.categories.minecraft_ai_agent": "Minecraft AI Agent",
   "key.minecraft_ai_agent.open_panel": "Открыть панель AI",
-  "key.minecraft_ai_agent.toggle_free_cursor": "Переключить свободную мышь (Э)",
+  "key.minecraft_ai_agent.toggle_free_cursor": "Переключить свободную мышь (G)",
   "message.minecraft_ai_agent.free_cursor_enabled": "Свободная мышь: включена",
   "message.minecraft_ai_agent.free_cursor_disabled": "Свободная мышь: выключена"
 }

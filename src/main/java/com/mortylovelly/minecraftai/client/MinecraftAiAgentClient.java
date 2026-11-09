@@ -18,6 +18,7 @@ import java.time.Instant;
 public final class MinecraftAiAgentClient implements ClientModInitializer {
     private static KeyBinding openPanelKey;
     private static KeyBinding toggleFreeCursorKey;
+    private static boolean freeCursorKeyMigrationChecked;
 
     @Override
     public void onInitializeClient() {
@@ -61,7 +62,7 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
         toggleFreeCursorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.minecraft_ai_agent.toggle_free_cursor",
                 InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_APOSTROPHE,
+                GLFW.GLFW_KEY_G,
                 "category.minecraft_ai_agent"
         ));
 
@@ -93,6 +94,15 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
     }
 
     private static void tick(MinecraftClient client) {
+        if (!freeCursorKeyMigrationChecked && toggleFreeCursorKey != null) {
+            freeCursorKeyMigrationChecked = true;
+            if (toggleFreeCursorKey.matchesKey(GLFW.GLFW_KEY_APOSTROPHE, 0)) {
+                toggleFreeCursorKey.setBoundKey(toggleFreeCursorKey.getDefaultKey());
+                KeyBinding.updateKeysByCode();
+                client.options.write();
+            }
+        }
+
         AiLogOverlay.tick(client);
 
         while (toggleFreeCursorKey.wasPressed()) {
