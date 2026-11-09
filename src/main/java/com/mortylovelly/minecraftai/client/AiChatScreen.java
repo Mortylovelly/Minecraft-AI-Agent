@@ -207,11 +207,6 @@ public final class AiChatScreen extends Screen {
         saveApiKeySilently();
         String message = messageInput.getText().trim();
         if (message.isEmpty()) return;
-        if (!AiClientConfig.hasApiKey()) {
-            messages.add("AI: Сначала вставь " + providerDisplayName() + " API key сверху.");
-            return;
-        }
-
         messages.add("Ты: " + message);
         messageInput.setText("");
         liveStatus = "Анализирую запрос...";
