@@ -143,9 +143,13 @@ public final class AiLogClient {
         LINES.addLast(line);
         while (LINES.size() > MAX_LINES) LINES.removeFirst();
 
-        totalCount++;
-        if (line.isWarning()) warningCount++;
-        if (line.isError()) errorCount++;
+        long physicalLines = 1L;
+        for (int index = 0; index < safeMessage.length(); index++) {
+            if (safeMessage.charAt(index) == '\n') physicalLines++;
+        }
+        totalCount += physicalLines;
+        if (line.isWarning()) warningCount += physicalLines;
+        if (line.isError()) errorCount += physicalLines;
         revision++;
     }
 
