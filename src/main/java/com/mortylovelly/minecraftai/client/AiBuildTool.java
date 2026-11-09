@@ -137,6 +137,14 @@ public final class AiBuildTool {
         int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
         boolean hollow = booleanValue(part, "hollow", false);
         Block block = clear ? net.minecraft.block.Blocks.AIR : getBlock(string(part, "block", ""));
+        long width = (long) maxX - minX + 1L;
+        long height = (long) maxY - minY + 1L;
+        long depth = (long) maxZ - minZ + 1L;
+        long estimated = width * height * depth;
+        if (hollow) {
+            estimated -= Math.max(0L, width - 2L) * Math.max(0L, height - 2L) * Math.max(0L, depth - 2L);
+        }
+        ensureBudget(estimated, changed);
 
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
@@ -162,6 +170,8 @@ public final class AiBuildTool {
         int thickness = clamp(optionalInt(part, "thickness", 0), 0, 3);
         int dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
         int steps = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
+        long side = thickness * 2L + 1L;
+        ensureBudget((steps + 1L) * side * side * side, changed);
         if (steps == 0) return placeThickPoint(world, origin, facing, x1, y1, z1, thickness, block, replace, changed);
         for (int i = 0; i <= steps; i++) {
             double t = i / (double) steps;
@@ -198,6 +208,19 @@ public final class AiBuildTool {
         int r2 = radius * radius;
         int inner = Math.max(0, radius - 1);
         int inner2 = inner * inner;
+        long diskBlocks = 0L;
+        long innerBlocks = 0L;
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                int distanceSquared = x * x + z * z;
+                if (distanceSquared <= r2) diskBlocks++;
+                if (distanceSquared < inner2) innerBlocks++;
+            }
+        }
+        long estimated = hollow
+                ? diskBlocks * Math.min(2, height) + Math.max(0, height - 2) * (diskBlocks - innerBlocks)
+                : diskBlocks * height;
+        ensureBudget(estimated, changed);
 
         for (int y = 0; y < height; y++) {
             for (int x = -radius; x <= radius; x++) {
@@ -210,6 +233,12 @@ public final class AiBuildTool {
             }
         }
         return changed;
+    }
+
+    private static void ensureBudget(long estimatedBlocks, int alreadyChanged) {
+        if (estimatedBlocks < 0L || estimatedBlocks > MAX_BLOCKS - (long) alreadyChanged) {
+            throw new IllegalArgumentException("Постройка превышает безопасный лимит " + MAX_BLOCKS + " блоков.");
+        }
     }
 
     private static int place(ServerWorld world, BlockPos origin, Direction facing, int x, int y, int z, Block block, boolean replace) {
