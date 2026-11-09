@@ -121,12 +121,15 @@ public final class AiAgentService {
 
     public static CompletableFuture<String> chat(String chatId, String message) {
         AiClientConfig.load();
-        if (!AiClientConfig.hasApiKey()) {
-            return CompletableFuture.completedFuture("Сначала укажи API key для " + providerName(AiClientConfig.getProvider()) + ".");
-        }
         ActiveTask task = new ActiveTask(chatId);
         if (!ACTIVE.compareAndSet(null, task)) {
             return CompletableFuture.completedFuture("Другой запрос уже выполняется. Дождись его завершения или нажми «Стоп».");
+        }
+
+        CompletableFuture<String> fastAction = tryFastAction(task, message);
+        if (fastAction == null && !AiClientConfig.hasApiKey()) {
+            ACTIVE.compareAndSet(task, null);
+            return CompletableFuture.completedFuture("Для обычного общения и сложных задач укажи API key для " + providerName(AiClientConfig.getProvider()) + ". Простые быстрые команды работают без ключа.");
         }
 
         AiChatHistory.add(chatId, "user", message);
@@ -134,7 +137,6 @@ public final class AiAgentService {
         System.out.println("[Minecraft AI Agent][" + providerName(AiClientConfig.getProvider()) + "] TASK START chars=" + message.length() + " chat=" + chatId);
 
         CompletableFuture<String> work;
-        CompletableFuture<String> fastAction = tryFastAction(task, message);
         try {
             work = fastAction != null ? fastAction : switch (AiClientConfig.getProvider()) {
                 case "gemini" -> chatGemini(task, message);
