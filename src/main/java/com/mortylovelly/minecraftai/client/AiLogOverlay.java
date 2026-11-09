@@ -241,19 +241,19 @@ public final class AiLogOverlay {
 
         if(compact){
             if(hitY<=y+panelHeaderHeight){
-                if(mouseX>=right-57&&mouseX<right-40){
+                if(hitX>=right-57&&hitX<right-40){
                     copyAllLogs();
                     AiUiSound.playClick();
                     return true;
                 }
-                if(mouseX>=right-38&&mouseX<right-21){
+                if(hitX>=right-38&&hitX<right-21){
                     collapsed=!collapsed;
                     dragging=false;
                     resizing=false;
                     AiUiSound.playClick();
                     return true;
                 }
-                if(mouseX>=right-19){
+                if(hitX>=right-19){
                     setOpen(false);
                     return true;
                 }
@@ -266,19 +266,19 @@ public final class AiLogOverlay {
                 return true;
             }
         }else if(hitY<=y+panelHeaderHeight){
-            if(mouseX>=right-94&&mouseX<right-53){
+            if(hitX>=right-94&&hitX<right-53){
                 copyAllLogs();
                 AiUiSound.playClick();
                 return true;
             }
-            if(mouseX>=right-50&&mouseX<right-29){
+            if(hitX>=right-50&&hitX<right-29){
                 collapsed=!collapsed;
                 dragging=false;
                 resizing=false;
                 AiUiSound.playClick();
                 return true;
             }
-            if(mouseX>=right-27){
+            if(hitX>=right-27){
                 setOpen(false);
                 return true;
             }
