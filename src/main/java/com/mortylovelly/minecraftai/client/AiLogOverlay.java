@@ -7,7 +7,10 @@ import net.minecraft.client.util.Window;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
+import org.lwjgl.system.MemoryStack;
 
+import java.nio.DoubleBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -124,6 +127,10 @@ public final class AiLogOverlay {
         int panelHeight=collapsed?panelHeaderHeight:height;
         int right=x+width;
         int bottom=y+panelHeight;
+        Window pointerWindow=MinecraftClient.getInstance().getWindow();
+        double[] rawPointer=getScaledPointerPosition(pointerWindow);
+        double panelMouseX=toPanelX(rawPointer[0]);
+        double panelMouseY=toPanelY(rawPointer[1]);
         float scale=0.92F+progress*0.08F;
 
         var matrices=context.getMatrices();
@@ -140,9 +147,9 @@ public final class AiLogOverlay {
         if(compact){
             context.drawTextWithShadow(renderer,Text.literal("LOGS"),x+8,y+8,0xFFFFFFFF);
             int copyX=right-57,collapseX=right-38,closeX=right-19;
-            headerButton(context,renderer,copyX,y+4,16,"C",false);
-            headerButton(context,renderer,collapseX,y+4,16,collapsed?"+":"−",false);
-            headerButton(context,renderer,closeX,y+4,16,"×",true);
+            headerButton(context,renderer,copyX,y+4,16,"C",false,panelMouseX,panelMouseY);
+            headerButton(context,renderer,collapseX,y+4,16,collapsed?"+":"−",false,panelMouseX,panelMouseY);
+            headerButton(context,renderer,closeX,y+4,16,"×",true,panelMouseX,panelMouseY);
         }else{
             context.drawTextWithShadow(renderer,Text.literal("SERVER LOGS"),x+11,y+9,0xFFFFFFFF);
 
@@ -155,9 +162,9 @@ public final class AiLogOverlay {
                         Text.literal(renderer.trimToWidth(status,statusMax)),x+112,y+9,statusColor);
             }
 
-            headerButton(context,renderer,right-94,y+6,39,"COPY",false);
-            headerButton(context,renderer,right-50,y+6,19,collapsed?"+":"−",false);
-            headerButton(context,renderer,right-27,y+6,19,"×",true);
+            headerButton(context,renderer,right-94,y+6,39,"COPY",false,panelMouseX,panelMouseY);
+            headerButton(context,renderer,right-50,y+6,19,collapsed?"+":"−",false,panelMouseX,panelMouseY);
+            headerButton(context,renderer,right-27,y+6,19,"×",true,panelMouseX,panelMouseY);
         }
 
         if(!collapsed){
@@ -473,18 +480,24 @@ public final class AiLogOverlay {
     }
 
     private static void headerButton(DrawContext context,TextRenderer renderer,int bx,int by,int bw,
-                                     String label,boolean danger){
-        MinecraftClient client=MinecraftClient.getInstance();
-        Window window=client.getWindow();
-        double mouseX=client.mouse.getX()*window.getScaledWidth()/(double)window.getWidth();
-        double mouseY=client.mouse.getY()*window.getScaledHeight()/(double)window.getHeight();
-        mouseX=toPanelX(mouseX);
-        mouseY=toPanelY(mouseY);
+                                     String label,boolean danger,double mouseX,double mouseY){
         boolean hovered=mouseX>=bx&&mouseX<=bx+bw&&mouseY>=by&&mouseY<=by+16;
         rounded(context,bx,by,bx+bw,by+16,hovered?0xFF687583:0xFF4B5561);
         int textWidth=renderer.getWidth(label);
         context.drawTextWithShadow(renderer,Text.literal(label),bx+(bw-textWidth)/2,by+4,
                 danger?0xFFFF8989:0xFFEAF0F6);
+    }
+
+    private static double[] getScaledPointerPosition(Window window){
+        try(MemoryStack stack=MemoryStack.stackPush()){
+            DoubleBuffer cursorX=stack.mallocDouble(1);
+            DoubleBuffer cursorY=stack.mallocDouble(1);
+            GLFW.glfwGetCursorPos(window.getHandle(),cursorX,cursorY);
+            return new double[]{
+                    cursorX.get(0)*window.getScaledWidth()/(double)window.getWidth(),
+                    cursorY.get(0)*window.getScaledHeight()/(double)window.getHeight()
+            };
+        }
     }
 
     private static void rounded(DrawContext context,int left,int top,int right,int bottom,int color){
