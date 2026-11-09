@@ -6,7 +6,7 @@
   "description": "A server-enabled Minecraft AI agent with live server logs, chat history, NPC and mob tools for Minecraft 1.20.1.",
   "authors": ["Mortylovelly"],
   "contact": {
-    "sources": "https://github.com/Mortylovelly/adastra-create-addon"
+    "sources": "https://github.com/Mortylovelly/Minecraft-AI-Agent"
   },
   "license": "MIT",
   "environment": "*",
