@@ -1,38 +1,54 @@
-# Minecraft AI Agent
+# Minecraft AI Agent 0.3.0
 
-Fabric 1.21.1 AI-agent mod with a real in-game chat panel. The old Forge 1.20.1 Ad Astra/Create addon has been removed.
+Minecraft 1.20.1 • Fabric • Java 17
 
-Press the backtick (`) key by default to open the panel. Type natural-language requests; the AI can call explicit Minecraft tools directly instead of typing Minecraft commands into chat.
+A server-enabled Minecraft AI agent. The client provides the AI chat panel and model connection. The server executes world tools, checks operator permissions and controls entities. Install the same mod JAR on the client and on the Fabric server.
 
-Examples:
-- Выдай мне алмазный меч
-- Построй небольшой дом рядом со мной
-- Осмотри место вокруг меня
-- Сломай этот блок
+## Open the panel
 
-Current tools: get_player_state, get_inventory, get_block, scan_area, place_block, fill_area, break_block, give_item, move_to, send_chat.
+Press **Right Shift** by default. Configure a provider API key in the panel. The key is stored locally in the client's config directory; it is not sent to the Minecraft server.
 
-The model can chain tools and receives each tool result before continuing. For example, a house task can inspect the player position, plan the structure, fill large rectangular sections, place details, verify results and then answer in the same panel. An item request uses give_item directly.
+You can also address the agent from the normal game chat:
 
-Architecture: Minecraft in-game panel -> local Python backend -> OpenAI Responses API -> tool calls -> Minecraft.
+\`@AI find the coordinates from chat and teleport me there\`
 
-The mod bridge listens on 127.0.0.1:8765. The Python backend listens on 127.0.0.1:8787. Conversation state is kept per panel session.
+The agent answers in chat using a server-generated message label. Such a message is not a signed message from a real player account.
 
-Minecraft 1.21.1
-Fabric Loader 0.19.3
-Fabric API 0.116.15+1.21.1
-Java 21
-Fabric Loom 1.9.2
-Gradle 8.12
+## Server requirements
 
-Windows setup:
-1. Install Python 3.11+.
-2. Run backend/start.bat.
-3. Put OPENAI_API_KEY=... into backend/.env when prompted.
-4. Run backend/start.bat again and leave it running.
-5. Install the built minecraft-ai-agent jar in Minecraft 1.21.1 Fabric.
-6. Open the in-game panel with the ` key.
+- Minecraft Java 1.20.1
+- Fabric Loader 0.17.2 or newer
+- Fabric API 0.92.11+1.20.1 or newer
+- Java 17
 
-The default backend model is gpt-5.6-luna and can be changed with OPENAI_MODEL in backend/.env. Never commit backend/.env or put the API key in the jar.
+Install the built JAR in the \`mods\` folder on both the client and the dedicated server. Restart the server. The server operator can check the integration with \`/aiagent status\`.
 
-Current limitation: this is a direct tool agent, not yet a full human-like player. Walking/pathfinding, realistic mining, containers, crafting, combat, entity control, screenshots and granular permission controls are later extensions.
+Mutating tools require the requesting player to have operator level 2. Read-only tools such as player state, nearby entities and block inspection are available without OP. A player cannot use the agent to modify another player's inventory or position unless they are an operator.
+
+## Current server tools
+
+Player state and inventory; player list; block inspection, placement, breaking and bounded area editing; world observation; structure location; item giving with custom names/enchantments; effects and player stats; teleport and game mode; time and weather; entity spawning and discovery; XP and spawnpoint; bounded Minecraft command execution; procedural building; custom-labelled system chat messages.
+
+NPC and mob controls:
+- Create a named server-side entity with \`create_npc\`.
+- Set it to follow the requesting player.
+- Control a nearby mob with \`control_entity\`: stop, follow, move to coordinates or attack an entity.
+- Remove an NPC by its server entity ID.
+
+These NPCs are server-side entities, not extra logged-in player accounts. Mob navigation is controlled by the server; it does not transfer the player's camera into the mob. Player-skin rendering and a fully player-like fake account are not included in this first server-enabled release.
+
+## Chat archive and token economy
+
+The client stores up to 1,800 received player and server chat messages in \`config/minecraft_ai_agent_game_chat.json\`. It captures messages while this client is connected; it cannot reconstruct messages sent before the archive was installed or while the client was offline.
+
+The model receives only search results, not the entire archive. Use \`search_chat\` to find text, senders or coordinate patterns, and \`get_recent_chat\` for a short recent window. Normal chat messages are archived locally and do not trigger model requests. Only messages addressed to \`@AI\` start a task.
+
+The agent routes only relevant tools for a request. Simple actions are executed with the fast path where supported; no tool list is sent for ordinary conversation. The server limits tool packet sizes and request rates.
+
+## Build
+
+GitHub Actions builds the mod with JDK 17:
+
+\`./gradlew build --no-daemon\`
+
+Artifact: \`build/libs/*.jar\`
