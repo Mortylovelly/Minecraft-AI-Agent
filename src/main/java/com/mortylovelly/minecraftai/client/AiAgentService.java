@@ -1484,8 +1484,11 @@ public final class AiAgentService {
         if (containsAny(lower, "стро", "дом", "башн", "замок", "мост", "стен", "дорог", "арка", "ворот", "построй", "постро", "build")) {
             selected.addAll(Set.of("get_player_state", "observe_world", "build_structure"));
         }
-        if (containsAny(lower, "деревн", "шахт", "кораб", "портал", "крепост", "найди", "телепорт")) {
-            selected.addAll(Set.of("locate_structure", "observe_world", "teleport_player", "get_player_state"));
+        if (containsAny(lower, "деревн", "шахт", "кораб", "портал", "крепост", "найди структуру", "найди деревню", "найди крепость")) {
+            selected.addAll(Set.of("locate_structure", "get_player_state"));
+        }
+        if (containsAny(lower, "телепорт", "тепни", "тепни меня", "перекинь", "перемести меня", "кинь меня", "перемести игрока")) {
+            selected.addAll(Set.of("teleport_player", "get_player_state"));
         }
         if (containsAny(lower, "дай", "выдай", "предмет", "меч", "кирк", "брон", "лук", "инвентар")) {
             selected.addAll(Set.of("give_item", "get_inventory", "clear_inventory", "get_player_state"));
@@ -1514,9 +1517,17 @@ public final class AiAgentService {
         if (containsAny(lower, "чат", "сообщен", "координат", "переписк", "писал", "писали", "отправлял", "истор")) {
             selected.addAll(Set.of("search_chat", "get_recent_chat"));
         }
-        if (containsAny(lower, "нпс", "npc", "создай персонажа", "создай помощника")) selected.add("create_npc");
-        if (containsAny(lower, "управляй моб", "всел", "заставь моб", "веди моб", "мобом")) {
-            selected.addAll(Set.of("find_entities", "control_entity", "remove_npc", "create_npc"));
+        if (containsAny(lower, "нпс", "npc", "персонаж", "помощник")) {
+            if (containsAny(lower, "создай", "создать", "появись", "заспавни")) selected.add("create_npc");
+            if (containsAny(lower, "удали", "убери", "исчезни", "пропади", "убей")) {
+                selected.addAll(Set.of("find_entities", "remove_npc"));
+            }
+            if (containsAny(lower, "управляй", "следуй", "иди", "двигайся", "остановись", "атакуй", "командуй")) {
+                selected.addAll(Set.of("find_entities", "control_entity"));
+            }
+        }
+        if (containsAny(lower, "управляй моб", "всел", "заставь моб", "веди моб", "мобом", "командуй мобом")) {
+            selected.addAll(Set.of("find_entities", "control_entity"));
         }
 
         return selected;
