@@ -24,6 +24,7 @@ public final class AiChatScreen extends Screen {
     private ButtonWidget testButton;
     private ButtonWidget newChatButton;
     private ButtonWidget clearChatButton;
+    private ButtonWidget logsButton;
     private boolean waiting;
     private String liveStatus = "";
     private long statusAnimationTick;
@@ -82,11 +83,16 @@ public final class AiChatScreen extends Screen {
                 .dimensions(panelLeft + 326, providerY, 112, 20).build());
 
         testButton = addDrawableChild(ButtonWidget.builder(Text.literal("Проверить"), button -> testConnection())
-                .dimensions(panelLeft + panelWidth - 322, panelTop + 9, 96, 20).build());
+                .dimensions(panelLeft + panelWidth - 414, panelTop + 9, 90, 20).build());
+        logsButton = addDrawableChild(ButtonWidget.builder(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"), button -> {
+                    AiLogOverlay.toggle();
+                    logsButton.setMessage(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"));
+                })
+                .dimensions(panelLeft + panelWidth - 320, panelTop + 9, 90, 20).build());
         newChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Новый чат"), button -> newChat())
-                .dimensions(panelLeft + panelWidth - 218, panelTop + 9, 96, 20).build());
+                .dimensions(panelLeft + panelWidth - 226, panelTop + 9, 100, 20).build());
         clearChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Очистить"), button -> clearChat())
-                .dimensions(panelLeft + panelWidth - 114, panelTop + 9, 100, 20).build());
+                .dimensions(panelLeft + panelWidth - 122, panelTop + 9, 108, 20).build());
 
         int inputY = panelTop + panelHeight - 35;
         messageInput = new TextFieldWidget(textRenderer, panelLeft + 14, inputY, panelWidth - 206, 22, Text.literal("Сообщение"));
@@ -133,6 +139,7 @@ public final class AiChatScreen extends Screen {
         if (testButton != null) testButton.active = !AiAgentService.isBusy();
         if (newChatButton != null) newChatButton.active = !AiAgentService.isBusy();
         if (clearChatButton != null) clearChatButton.active = !AiAgentService.isBusy();
+        if (logsButton != null) logsButton.setMessage(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"));
         if (geminiButton != null) geminiButton.active = !AiAgentService.isBusy() && !AiClientConfig.getProvider().equals("gemini");
         if (deepSeekButton != null) deepSeekButton.active = !AiAgentService.isBusy() && !AiClientConfig.getProvider().equals("deepseek");
         if (groqButton != null) groqButton.active = !AiAgentService.isBusy() && !AiClientConfig.getProvider().equals("groq");
@@ -265,6 +272,31 @@ public final class AiChatScreen extends Screen {
             y -= 7;
         }
         super.render(context, mouseX, mouseY, delta);
+        AiLogOverlay.render(context, textRenderer, width, height);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (AiLogOverlay.mouseClicked(mouseX, mouseY, button, width, height)) return true;
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (AiLogOverlay.mouseDragged(mouseX, mouseY, button, width, height)) return true;
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (AiLogOverlay.mouseReleased(mouseX, mouseY, button)) return true;
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+        if (AiLogOverlay.mouseScrolled(mouseX, mouseY, amount, width, height)) return true;
+        return super.mouseScrolled(mouseX, mouseY, amount);
     }
 
     private String buildAnimatedStatus() {
@@ -306,6 +338,7 @@ public final class AiChatScreen extends Screen {
     @Override
     public void close() {
         AiAgentStatus.clearListener();
+        AiLogOverlay.hide();
         MinecraftClient.getInstance().setScreen(null);
     }
 }
