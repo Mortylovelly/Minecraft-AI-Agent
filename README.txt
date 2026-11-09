@@ -39,11 +39,11 @@ These NPCs are server-side entities, not extra logged-in player accounts. Mob na
 
 ## Chat archive and token economy
 
-The client stores up to 1,800 received player and server chat messages in \`config/minecraft_ai_agent_game_chat.json\`. It captures messages while this client is connected; it cannot reconstruct messages sent before the archive was installed or while the client was offline.
+The client stores up to 1,800 received player and server chat messages in \`config/minecraft_ai_agent_game_chat.jsonl\`. It captures messages while this client is connected; it cannot reconstruct messages sent before the archive was installed or while the client was offline.
 
 The model receives only search results, not the entire archive. Use \`search_chat\` to find text, senders or coordinate patterns, and \`get_recent_chat\` for a short recent window. Normal chat messages are archived locally and do not trigger model requests. Only messages addressed to \`@AI\` start a task.
 
-The agent routes only relevant tools for a request. Simple actions are executed with the fast path where supported; no tool list is sent for ordinary conversation. The server limits tool packet sizes and request rates.
+The agent routes only relevant tools for a request. Simple fast-path actions can run without an API key; when an API key is configured, they are executed without a model request. Other actions use the model only when necessary; no tool list is sent for ordinary conversation. The server limits tool packet sizes and request rates.
 
 ## Build
 
