@@ -60,6 +60,8 @@ The agent routes only relevant tools for a request. Simple fast-path actions can
 
 ## Build
 
+CI verification branch for 0.3.4.
+
 GitHub Actions builds the mod with JDK 17:
 
 \`./gradlew build --no-daemon\`
