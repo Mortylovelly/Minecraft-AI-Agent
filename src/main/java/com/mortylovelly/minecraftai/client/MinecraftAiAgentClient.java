@@ -31,6 +31,11 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
                 AiGameChatHistory.record("SERVER", "system", message.getString(), Instant.now().toEpochMilli());
             }
         });
+
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            AiLogClient.resetForWorldJoin();
+            AiAgentNetwork.subscribeToLogs();
+        });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> AiAgentNetwork.onDisconnect());
 
         openPanelKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
