@@ -60,7 +60,7 @@ public final class AiAgentNetwork {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.getNetworkHandler() == null) return;
         if (!ClientPlayNetworking.canSend(LOG_SUBSCRIBE)) {
-            AiLogClient.setConnectionStatus("На сервере нет Minecraft AI Agent 0.3.1.", false);
+            AiLogClient.setConnectionStatus("На сервере нет Minecraft AI Agent 0.3.2.", false);
             return;
         }
         PacketByteBuf buffer = PacketByteBufs.create();
@@ -83,7 +83,7 @@ public final class AiAgentNetwork {
             return CompletableFuture.completedFuture(error("Сначала подключись к миру или серверу."));
         }
         if (!ClientPlayNetworking.canSend(TOOL_REQUEST)) {
-            return CompletableFuture.completedFuture(error("На сервере не установлен Minecraft AI Agent 0.3.1 или сервер не поддерживает сетевой интерфейс агента."));
+            return CompletableFuture.completedFuture(error("На сервере не установлен Minecraft AI Agent 0.3.2 или сервер не поддерживает сетевой интерфейс агента."));
         }
         String requestId = UUID.randomUUID().toString().replace("-", "");
         CompletableFuture<JsonObject> future = new CompletableFuture<>();

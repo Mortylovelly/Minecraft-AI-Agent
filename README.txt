@@ -1,4 +1,4 @@
-# Minecraft AI Agent 0.3.1
+# Minecraft AI Agent 0.3.2
 
 Minecraft 1.20.1 • Fabric • Java 17
 
@@ -15,11 +15,11 @@ The log window has three filters:
 - **Custom logs** — events from Mortylovelly project namespaces and recognized project markers such as \`[Fix]\`.
 - **Errors** — ERROR and FATAL events from both the general and custom streams.
 
-Log text is re-wrapped when the window is resized. The client retains the latest 5,000 entries in memory. The three counters show total, warning and error events received since joining the current world. Minecraft item icons (emerald, glowstone dust and redstone) are used for the counters.
+Log text is re-wrapped when the window is resized. The panel keeps the latest 5,000 entries in memory for display and also saves the complete collected panel feed on the client in `logs/minecraft-ai-agent/latest.log`. The archive rotates through `latest.log.1` and `latest.log.2`; each file is capped at 4 MiB. The COPY button in the log window copies the full saved archive, oldest first, including all collected server, custom and error entries. The three counters show total, warning and error events received since joining the current world. Minecraft item icons (emerald, glowstone dust and redstone) are used for the counters.
 
 The dedicated-server log stream requires operator permission level 2. The server sends logs only to subscribed operator clients. API keys and common token patterns are redacted before transmission. The stream starts on join, so the counters include events from the moment the client connects; older server startup events are not replayed.
 
-The log window reads the live server Log4j stream, not the server filesystem's \`logs/latest.log\` file directly. On a dedicated server it receives events from that server process. On an integrated singleplayer server the Log4j root is shared by the client and integrated server process.
+The log window reads the live server Log4j stream, not the server filesystem's `logs/latest.log` file directly. On a dedicated server it receives events from that server process. On an integrated singleplayer server the Log4j root is shared by the client and integrated server process. The local archive contains only entries that reached the Agent panel; it does not replace Minecraft's complete vanilla `latest.log` or automatically capture every third-party client mod logger. Common API-key and token patterns are redacted before entries are stored.
 
 You can also address the agent from the normal game chat:
 

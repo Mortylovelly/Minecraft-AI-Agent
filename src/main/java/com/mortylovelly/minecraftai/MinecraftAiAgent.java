@@ -22,7 +22,7 @@ public final class MinecraftAiAgent implements ModInitializer {
                         .then(CommandManager.literal("status")
                                 .executes(context -> {
                                     context.getSource().sendFeedback(
-                                            () -> Text.literal("Minecraft AI Agent 0.3.1: server tools, chat archive and log bridge active"),
+                                            () -> Text.literal("Minecraft AI Agent 0.3.2: server tools, chat archive and log bridge active"),
                                             false
                                     );
                                     return 1;

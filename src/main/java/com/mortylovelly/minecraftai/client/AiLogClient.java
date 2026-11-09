@@ -112,6 +112,7 @@ public final class AiLogClient {
             JsonObject root = JsonParser.parseString(rawJson).getAsJsonObject();
             JsonArray entries = root.getAsJsonArray("lines");
             if (entries == null) return;
+            List<LogLine> persistedLines = new ArrayList<>();
             for (JsonElement element : entries) {
                 if (!element.isJsonObject()) continue;
                 JsonObject item = element.getAsJsonObject();
@@ -120,20 +121,34 @@ public final class AiLogClient {
                 String logger = string(item, "logger", "Minecraft");
                 String message = string(item, "message", "");
                 boolean custom = item.has("custom") && item.get("custom").getAsBoolean();
-                append(timestamp, level, logger, message, custom);
+                persistedLines.add(append(timestamp, level, logger, message, custom));
             }
+            AiLogFile.appendBatch(persistedLines);
         } catch (RuntimeException exception) {
             AiAgentLog.warn("Не удалось разобрать пакет серверных логов: " + exception.getMessage());
         }
     }
 
     public static synchronized void addLocal(String level, String logger, String message) {
-        append(System.currentTimeMillis(), level, logger, message, true);
+        AiLogFile.appendBatch(List.of(append(System.currentTimeMillis(), level, logger, message, true)));
     }
 
-    private static void append(long timestamp, String level, String logger, String message, boolean custom) {
+    public static synchronized String exportAllLogs() {
+        String savedLogs = AiLogFile.readAll();
+        if (savedLogs != null && !savedLogs.isBlank()) return savedLogs;
+        StringBuilder fallback = new StringBuilder();
+        for (LogLine line : LINES) {
+            fallback.append('[').append(line.time()).append("] [")
+                    .append(line.level()).append("] [")
+                    .append(line.logger()).append("] ")
+                    .append(line.message()).append(System.lineSeparator());
+        }
+        return fallback.toString();
+    }
+
+    private static LogLine append(long timestamp, String level, String logger, String message, boolean custom) {
         String normalizedLevel = level == null ? "INFO" : level.toUpperCase(Locale.ROOT);
-        String safeMessage = message == null ? "" : message;
+        String safeMessage = AiLogFile.redactSecrets(message == null ? "" : message);
         if (safeMessage.length() > 1800) safeMessage = safeMessage.substring(0, 1800) + " …";
         String safeLogger = logger == null ? "Minecraft" : logger;
         if (safeLogger.length() > 96) safeLogger = safeLogger.substring(0, 96);
@@ -151,6 +166,7 @@ public final class AiLogClient {
         if (line.isWarning()) warningCount += physicalLines;
         if (line.isError()) errorCount += physicalLines;
         revision++;
+        return line;
     }
 
     private static String string(JsonObject object, String key, String fallback) {

@@ -33,6 +33,8 @@ public final class AiLogOverlay {
     private static int cachedWidth = -1;
     private static int cachedFilter = -1;
     private static final List<DisplayLine> CACHED_LINES = new ArrayList<>();
+    private static String copyNotice = "";
+    private static long copyNoticeUntil;
 
     private AiLogOverlay() {}
 
@@ -75,17 +77,20 @@ public final class AiLogOverlay {
         context.fill(x + 1, y + 25, right - 1, y + 26, 0xFF343D49);
 
         context.drawTextWithShadow(renderer, Text.literal("SERVER LOGS"), x + 9, y + 8, 0xFFFFFFFF);
-        String status = AiLogClient.getConnectionStatus();
-        int statusColor = AiLogClient.isConnected() ? 0xFF80E09A : 0xFFFFD36A;
+        boolean showingCopyNotice = System.currentTimeMillis() < copyNoticeUntil;
+        String status = showingCopyNotice ? copyNotice : AiLogClient.getConnectionStatus();
+        int statusColor = showingCopyNotice || AiLogClient.isConnected() ? 0xFF80E09A : 0xFFFFD36A;
         int statusX = x + 112;
-        int statusMax = width - 166;
+        int statusMax = width - 207;
         if (statusMax > 20) {
             String clipped = renderer.trimToWidth(status, statusMax);
             context.drawTextWithShadow(renderer, Text.literal(clipped), statusX, y + 8, statusColor);
         }
 
+        int copyX = right - 82;
         int collapseX = right - 43;
         int closeX = right - 23;
+        drawHeaderButton(context, renderer, copyX, y + 4, 36, "COPY");
         drawHeaderButton(context, renderer, collapseX, y + 4, 16, collapsed ? "+" : "−");
         drawHeaderButton(context, renderer, closeX, y + 4, 16, "×");
 
@@ -137,6 +142,10 @@ public final class AiLogOverlay {
 
         int right = x + width;
         if (mouseY <= y + 25) {
+            if (mouseX >= right - 82 && mouseX < right - 46) {
+                copyAllLogs();
+                return true;
+            }
             if (mouseX >= right - 25) {
                 hide();
                 return true;
@@ -218,6 +227,15 @@ public final class AiLogOverlay {
         int visible = Math.max(1, (contentBottom - (y + 31)) / 11);
         scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, CACHED_LINES.size() - visible)));
         return true;
+    }
+
+    private static void copyAllLogs() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        String logs = AiLogClient.exportAllLogs();
+        if (logs == null || logs.isBlank()) logs = "Логи Minecraft AI Agent пока пусты.";
+        client.keyboard.setClipboard(logs);
+        copyNotice = "Скопировано: " + logs.length() + " симв.";
+        copyNoticeUntil = System.currentTimeMillis() + 3000L;
     }
 
     private static void ensureBounds(int screenWidth, int screenHeight) {
