@@ -93,6 +93,27 @@ public final class AiLogOverlay {
         return compact()?24:29;
     }
 
+    private static float drawScale(){
+        return 0.92F+animationProgress()*0.08F;
+    }
+
+    private static float drawYOffset(){
+        return (1.0F-animationProgress())*5.0F;
+    }
+
+    public static double toPanelX(double screenX){
+        float scale=drawScale();
+        double center=x+width/2.0;
+        return center+(screenX-center)/scale;
+    }
+
+    public static double toPanelY(double screenY){
+        float scale=drawScale();
+        int panelHeight=collapsed?headerHeight():height;
+        double center=y+panelHeight/2.0;
+        return center+(screenY-center-drawYOffset())/scale;
+    }
+
     public static void render(DrawContext context,TextRenderer renderer,int screenWidth,int screenHeight){
         float progress=animationProgress();
         if(!visible||progress<=0.005F)return;
@@ -451,6 +472,8 @@ public final class AiLogOverlay {
         Window window=client.getWindow();
         double mouseX=client.mouse.getX()*window.getScaledWidth()/(double)window.getWidth();
         double mouseY=client.mouse.getY()*window.getScaledHeight()/(double)window.getHeight();
+        mouseX=toPanelX(mouseX);
+        mouseY=toPanelY(mouseY);
         boolean hovered=mouseX>=bx&&mouseX<=bx+bw&&mouseY>=by&&mouseY<=by+16;
         rounded(context,bx,by,bx+bw,by+16,hovered?0xFF687583:0xFF4B5561);
         int textWidth=renderer.getWidth(label);

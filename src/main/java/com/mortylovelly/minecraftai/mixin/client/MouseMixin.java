@@ -23,8 +23,8 @@ public abstract class MouseMixin {
                 ||button!=GLFW.GLFW_MOUSE_BUTTON_LEFT)return;
 
         Window w=client.getWindow();
-        double mx=scaledX(client.mouse.getX(),w);
-        double my=scaledY(client.mouse.getY(),w);
+        double mx=AiLogOverlay.toPanelX(scaledX(client.mouse.getX(),w));
+        double my=AiLogOverlay.toPanelY(scaledY(client.mouse.getY(),w));
         if(action==GLFW.GLFW_PRESS){
             if(AiLogOverlay.mouseClicked(mx,my,button,w.getScaledWidth(),w.getScaledHeight()))ci.cancel();
         }else if(action==GLFW.GLFW_RELEASE){
@@ -38,7 +38,8 @@ public abstract class MouseMixin {
                 ||!AiLogOverlay.isOpen()||client.mouse.isCursorLocked())return;
 
         Window w=client.getWindow();
-        AiLogOverlay.mouseDragged(scaledX(cursorX,w),scaledY(cursorY,w),GLFW.GLFW_MOUSE_BUTTON_LEFT,
+        AiLogOverlay.mouseDragged(AiLogOverlay.toPanelX(scaledX(cursorX,w)),
+                AiLogOverlay.toPanelY(scaledY(cursorY,w)),GLFW.GLFW_MOUSE_BUTTON_LEFT,
                 w.getScaledWidth(),w.getScaledHeight());
     }
 
@@ -48,8 +49,8 @@ public abstract class MouseMixin {
                 ||!AiLogOverlay.isOpen()||client.mouse.isCursorLocked())return;
 
         Window w=client.getWindow();
-        double mx=scaledX(client.mouse.getX(),w);
-        double my=scaledY(client.mouse.getY(),w);
+        double mx=AiLogOverlay.toPanelX(scaledX(client.mouse.getX(),w));
+        double my=AiLogOverlay.toPanelY(scaledY(client.mouse.getY(),w));
         if(AiLogOverlay.mouseScrolled(mx,my,vertical,w.getScaledWidth(),w.getScaledHeight()))ci.cancel();
     }
 
