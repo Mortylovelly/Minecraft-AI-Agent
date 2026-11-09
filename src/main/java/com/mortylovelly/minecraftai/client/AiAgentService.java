@@ -77,7 +77,7 @@ public final class AiAgentService {
             "give_item", "apply_effect", "set_player_stats", "clear_inventory",
             "teleport_player", "set_gamemode", "set_time", "set_weather",
             "spawn_entity", "clear_area", "break_block", "run_minecraft_command",
-            "send_chat", "remember_memory", "forget_memory", "set_block", "fill_area", "give_experience", "set_spawnpoint"
+            "send_chat", "remember_memory", "forget_memory", "set_block", "fill_area", "give_experience", "set_spawnpoint", "create_npc", "control_entity", "remove_npc"
     );
 
     private static final Set<String> ALLOWED_COMMANDS = Set.of(
@@ -90,19 +90,15 @@ public final class AiAgentService {
     );
 
     private static final String INSTRUCTIONS = """
-            You are Minecraft AI Agent for Minecraft 1.21.1.
-            Control the current singleplayer world through tools; tool results are ground truth.
-            Understand natural Russian and colloquial requests. Never claim an action without a successful tool result.
-            Capability questions are answered directly without tools; real requests should be executed.
-            Use the smallest suitable tool. Observe only when position/orientation/environment matters; inspect_region is for exact blocks.
-            For every building request (house, bridge, wall, tower, road, gate, platform, custom structure), use build_structure. Do not use build_house or build_blueprint for ordinary construction.
-            build_structure is a procedural builder: design the structure yourself, choose a sensible material palette and create a coherent result from a small number of primitives. Local coordinates are +X right, +Y up and +Z forward from the player. Prefer one build_structure call containing roughly 4-20 meaningful parts rather than many tiny block calls.
-            When the user asks only for a building idea or design, discuss the design without building. When the user explicitly gives a construction request but has not specified materials/style, briefly propose what you will build and what it will be made from; wait for the user's confirmation or "делай по-своему" before constructing. If the user already specified the material/style or has already approved the plan, build immediately.
-            The build_structure result is ground truth. After a successful build call, do not repeat the same construction through individual set_block/fill_area calls.
-            Keep destruction inside the requested area. Prefer one high-level action over many tiny calls.
-            Independent tool calls may be grouped. Stop after the requested result is confirmed.
-            Memory is per chat; store only durable facts such as preferences, locations, coordinates and styles.
-            If a tool fails, report the failure.
+            You are Minecraft AI Agent for Minecraft 1.20.1 Fabric servers.
+            The player is connected to a real Minecraft server; all world-changing tools execute on that server.
+            Never claim an action succeeded unless the server tool result confirms it. Server-generated chat labels are not signed player identities.
+            Understand natural Russian and colloquial wording. For normal conversation, do not call tools.
+            Use only the smallest relevant tools. Do not inspect or send the entire chat history to the model.
+            When asked about earlier messages or coordinates, use search_chat with mode=coordinates or a short text query; use get_recent_chat only for the latest few messages.
+            For ordinary construction use build_structure with a compact plan. For mobs and NPCs use create_npc, find_entities, control_entity or remove_npc.
+            A created NPC is a server-side entity, not a separately logged-in player. Mob control uses server navigation; it does not transfer the player's camera or authenticate a fake player account.
+            Store only durable facts in memory. Report server permission errors and unsupported actions honestly.
             """.strip();
 
     private static final AtomicReference<ActiveTask> ACTIVE = new AtomicReference<>();
@@ -536,22 +532,23 @@ public final class AiAgentService {
     }
 
     private static CompletableFuture<JsonObject> runOnServer(ActiveTask task, String name, JsonObject args) {
-        MinecraftServer server = net.minecraft.client.MinecraftClient.getInstance().getServer();
-        if (server == null) return completedToolError("Нет запущенного локального Minecraft-сервера.");
-        CompletableFuture<JsonObject> future = new CompletableFuture<>();
-        server.execute(() -> {
-            if (task.cancelled) {
-                future.complete(errorResult("Запрос отменён."));
-                return;
-            }
-            try {
-                JsonObject result = executeTool(server, name, args, task);
-                future.complete(result);
-            } catch (Exception exception) {
-                future.complete(errorResult(exception.getMessage() == null ? exception.toString() : exception.getMessage()));
-            }
-        });
-        return future;
+        if (task.cancelled) return completedToolError("Запрос отменён.");
+
+        if (name.equals("remember_memory") || name.equals("forget_memory")) {
+            args.addProperty("_chat_id", task.chatId);
+            return CompletableFuture.completedFuture(name.equals("remember_memory") ? rememberMemory(args) : forgetMemory(args));
+        }
+        if (name.equals("search_chat")) {
+            return CompletableFuture.completedFuture(AiGameChatHistory.search(
+                    string(args, "query", ""),
+                    string(args, "mode", "text"),
+                    optionalInt(args, "limit", 12)
+            ));
+        }
+        if (name.equals("get_recent_chat")) {
+            return CompletableFuture.completedFuture(AiGameChatHistory.recent(optionalInt(args, "limit", 10)));
+        }
+        return AiAgentNetwork.requestTool(name, args);
     }
 
     private static JsonObject executeTool(MinecraftServer server, String name, JsonObject args, ActiveTask task) {
@@ -1423,6 +1420,9 @@ public final class AiAgentService {
                 case "fill_area" -> "Готово — область изменена.";
                 case "give_experience" -> "Готово — опыт выдан.";
                 case "set_spawnpoint" -> "Готово — точка возрождения установлена.";
+                case "create_npc" -> "Готово — NPC создан на сервере.";
+                case "control_entity" -> "Готово — команда управления мобом отправлена.";
+                case "remove_npc" -> "Готово — сущность удалена.";
                 default -> "Готово.";
             };
         }
@@ -1516,11 +1516,15 @@ public final class AiAgentService {
         if (containsAny(lower, "убей", "убить", "убирай моб", "удали моб", "зомби уб", "скелет уб", "крипер уб")) selected.add("run_minecraft_command");
         if (containsAny(lower, "онлайн", "игроки", "кто играет", "кто на сервере", "кто здесь")) selected.add("list_players");
         if (containsAny(lower, "убей", "убить", "убирай моб", "удали моб", "зомби уб", "скелет уб", "крипер уб")) selected.add("run_minecraft_command");
-        if (containsAny(lower, "напиши в чат", "сообщен", "скажи всем")) selected.add("send_chat");
-
-        if (selected.isEmpty()) {
-            selected.addAll(Set.of("get_player_state", "list_players", "observe_world", "run_minecraft_command", "give_item", "teleport_player", "set_gamemode", "set_time", "set_weather"));
+        if (containsAny(lower, "напиши в чат", "сообщен", "скажи всем", "отправь сообщение")) selected.add("send_chat");
+        if (containsAny(lower, "чат", "сообщен", "координат", "переписк", "писал", "писали", "отправлял", "истор")) {
+            selected.addAll(Set.of("search_chat", "get_recent_chat"));
         }
+        if (containsAny(lower, "нпс", "npc", "создай персонажа", "создай помощника")) selected.add("create_npc");
+        if (containsAny(lower, "управляй моб", "всел", "заставь моб", "веди моб", "мобом")) {
+            selected.addAll(Set.of("find_entities", "control_entity", "remove_npc", "create_npc"));
+        }
+
         return selected;
     }
 
@@ -1595,10 +1599,33 @@ public final class AiAgentService {
                 property("entity", "string", "Entity ID.", true), property("player", "string", "Player name; empty means current player.", false), intPropertyOptional("x", "X."), intPropertyOptional("y", "Y."), intPropertyOptional("z", "Z."), intPropertyOptional("count", "1..16 entities in one call.")
         )));
         tools.add(function("list_players", "List online players.", objectProperties()));
+        tools.add(function("create_npc", "Create a named server-side mob NPC. It is an entity, not a logged-in player account.", objectProperties(
+                property("entity_type", "string", "Registered entity ID; defaults to minecraft:villager.", false),
+                property("name", "string", "Visible NPC name.", false),
+                intPropertyOptional("x", "Spawn X."), intPropertyOptional("y", "Spawn Y."), intPropertyOptional("z", "Spawn Z."),
+                property("follow_player", "boolean", "Make this NPC follow the current player.", false)
+        )));
+        tools.add(function("control_entity", "Control a nearby mob by its entity_id. Actions: stop, follow_player, move_to, attack_entity.", objectProperties(
+                intProperty("entity_id"),
+                enumProperty("action", new String[]{"stop","follow_player","move_to","attack_entity"}, "Control action.", true),
+                intPropertyOptional("x", "Destination X for move_to."), intPropertyOptional("y", "Destination Y for move_to."),
+                intPropertyOptional("z", "Destination Z for move_to."), intPropertyOptional("target_entity_id", "Target entity ID for attack_entity."),
+                property("speed", "number", "Movement speed from 0.1 to 2.5.", false)
+        )));
+        tools.add(function("remove_npc", "Remove a nearby server-side NPC or controlled mob by entity ID.", objectProperties(intProperty("entity_id"))));
+        tools.add(function("search_chat", "Search the local archive of chat messages received by this client. Use mode=coordinates to find old coordinate posts. Only matching messages are returned.", objectProperties(
+                property("query", "string", "Text or player name to search; may be empty for a coordinate scan.", true),
+                enumProperty("mode", new String[]{"text","coordinates"}, "Search by text or by coordinate patterns.", false),
+                intPropertyOptional("limit", "Maximum matches to return, 1..20.")
+        )));
+        tools.add(function("get_recent_chat", "Read only the latest few archived game-chat messages; never request the full history.", objectProperties(intPropertyOptional("limit", "Maximum messages to return, 1..20."))));
         tools.add(function("remember_memory", "Remember a useful durable fact automatically when it will help in future turns: preferences, named locations, coordinates, build styles or other stable facts. Do not store trivial chat.", objectProperties(property("text", "string", "Durable fact to remember.", true))));
         tools.add(function("forget_memory", "Forget a stored durable memory.", objectProperties(property("text", "string", "Memory text to remove.", true))));
         tools.add(function("run_minecraft_command", "Run a normal in-game Minecraft command for supported gameplay actions when no specialized tool is enough. Do not use admin/server-control commands such as op, ban, stop or whitelist.", objectProperties(property("command", "string", "Minecraft command without or with a leading slash.", true))));
-        tools.add(function("send_chat", "Send a message to all players from the AI.", objectProperties(property("message", "string", "Message text.", true))));
+        tools.add(function("send_chat", "Broadcast a server-generated system chat message. The optional name is a visible label, not a signed player identity.", objectProperties(
+                property("message", "string", "Message text.", true),
+                property("name", "string", "Visible sender label such as AI, Server or a custom NPC name.", false)
+        )));
         return tools;
     }
 
