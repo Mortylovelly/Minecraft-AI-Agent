@@ -319,7 +319,7 @@ public final class AiAgentServerTools {
             data.addProperty("x", found.getX());
             data.addProperty("y", found.getY());
             data.addProperty("z", found.getZ());
-            data.addProperty("distance", round(Math.sqrt(found.getSquaredDistance(player.getBlockPos())));
+            data.addProperty("distance", round(Math.sqrt(found.getSquaredDistance(player.getBlockPos()))));
         }
         return ok(data);
     }
