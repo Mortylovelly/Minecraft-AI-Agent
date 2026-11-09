@@ -5,6 +5,7 @@ on:
     branches: [ main, minecraft-1.20.1-fabric ]
   pull_request:
     branches: [ main, minecraft-1.20.1-fabric ]
+  workflow_dispatch:
 
 permissions:
   contents: read
