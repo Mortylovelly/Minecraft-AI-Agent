@@ -51,6 +51,7 @@ public final class AiAgentLog {
                 System.err.println("[Minecraft AI Agent] Could not write agent log: " + exception.getMessage());
             }
         }
+        AiLogClient.addLocal(level, "minecraft_ai_agent.client", safe);
     }
 
     private static void rotateIfNeeded() throws IOException {
