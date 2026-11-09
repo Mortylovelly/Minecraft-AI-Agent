@@ -1,4 +1,4 @@
-# Minecraft AI Agent 0.3.2
+# Minecraft AI Agent 0.3.3
 
 Minecraft 1.20.1 • Fabric • Java 17
 
@@ -8,14 +8,14 @@ A server-enabled Minecraft AI agent. The client provides the AI chat panel and m
 
 Press **Right Shift** by default. Configure a provider API key in the panel. The key is stored locally in the client's config directory; it is not sent to the Minecraft server.
 
-Click **Logs** in the agent panel to open the floating server log window. It can be moved by dragging its title bar, resized from the bottom-right corner, collapsed with the minus button and closed with the X or the Logs toggle button.
+Click **Logs** in the AI panel to open the independent log HUD. The AI panel closes with a short animation and the log window stays on the game HUD; opening AI again with Right Shift temporarily hides Logs instead of drawing it over the AI screen. The log window starts compact (390 × 230 GUI pixels), can be dragged, resized up to half of the screen, collapsed with the minus button and closed with X. It uses an opaque grey background, slightly rounded corners and short open/close animations.
 
 The log window has three filters:
 - **Logs** — all received server Log4j events.
 - **Custom logs** — events from Mortylovelly project namespaces and recognized project markers such as \`[Fix]\`.
 - **Errors** — ERROR and FATAL events from both the general and custom streams.
 
-Log text is re-wrapped when the window is resized. The panel keeps the latest 5,000 entries in memory for display and also saves the complete collected panel feed on the client in `logs/minecraft-ai-agent/latest.log`. The archive rotates through `latest.log.1` and `latest.log.2`; each file is capped at 4 MiB. The COPY button in the log window copies the full saved archive, oldest first, including all collected server, custom and error entries. The three counters show total, warning and error events received since joining the current world. Minecraft item icons (emerald, glowstone dust and redstone) are used for the counters.
+Log text is re-wrapped when the window is resized. The panel keeps the latest 5,000 entries in memory for display and also saves the complete collected panel feed on the client in `logs/minecraft-ai-agent/latest.log`. The archive rotates through `latest.log.1` and `latest.log.2`; each file is capped at 4 MiB. The COPY button in the log window copies the full saved archive, oldest first, including all collected server, custom and error entries. The three counters show total, warning and error events received since joining the current world. INFO lines are green, WARN lines yellow, ERROR/FATAL lines red, DEBUG lines blue and TRACE lines muted. Minecraft item icons (emerald, glowstone dust and redstone) are used for the counters.
 
 The dedicated-server log stream requires operator permission level 2. The server sends logs only to subscribed operator clients. API keys and common token patterns are redacted before transmission. The stream starts on join, so the counters include events from the moment the client connects; older server startup events are not replayed.
 

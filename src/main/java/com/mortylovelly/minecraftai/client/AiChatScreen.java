@@ -34,6 +34,10 @@ public final class AiChatScreen extends Screen {
     private int panelTop;
     private int panelWidth;
     private int panelHeight;
+    private long animationStartedAt=System.nanoTime();
+    private long closingStartedAt;
+    private boolean closing;
+    private static final long ANIMATION_DURATION_NANOS=190_000_000L;
 
     public AiChatScreen() {
         super(Text.literal("Minecraft AI Agent"));
@@ -47,6 +51,8 @@ public final class AiChatScreen extends Screen {
 
     @Override
     protected void init() {
+        animationStartedAt=System.nanoTime();
+        closing=false;
         AiClientConfig.load();
         AiChatHistory.load();
         AiAgentMemory.load();
@@ -86,7 +92,7 @@ public final class AiChatScreen extends Screen {
                 .dimensions(panelLeft + panelWidth - 414, panelTop + 9, 90, 20).build());
         logsButton = addDrawableChild(ButtonWidget.builder(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"), button -> {
                     AiLogOverlay.toggle();
-                    logsButton.setMessage(Text.literal(AiLogOverlay.isOpen() ? "Hide logs" : "Logs"));
+                    if (AiLogOverlay.isOpen()) beginClose(false);
                 })
                 .dimensions(panelLeft + panelWidth - 320, panelTop + 9, 90, 20).build());
         newChatButton = addDrawableChild(ButtonWidget.builder(Text.literal("Новый чат"), button -> newChat())
@@ -112,6 +118,10 @@ public final class AiChatScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        if (closing) {
+            if (System.nanoTime()-closingStartedAt>=ANIMATION_DURATION_NANOS) MinecraftClient.getInstance().setScreen(null);
+            return;
+        }
         syncTaskState();
         long size = AiChatHistory.getAll(chatId).size();
         if (size != knownHistorySize) {
@@ -246,57 +256,66 @@ public final class AiChatScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
-        context.fill(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight, 0xF0121216);
-        context.fill(panelLeft, panelTop, panelLeft + panelWidth, panelTop + 1, 0xFFFFFFFF);
-        context.fill(panelLeft, panelTop + 84, panelLeft + panelWidth, panelTop + 85, 0xFF303038);
+        float progress=animationProgress();
+        context.fill(0,0,width,height,((int)(0x58*progress))<<24);
+        var matrices=context.getMatrices();
+        matrices.push();
+        float scale=0.94F+0.06F*progress;
+        matrices.translate(width/2.0F,panelTop+panelHeight/2.0F+(1.0F-progress)*12.0F,0.0F);
+        matrices.scale(scale,scale,1.0F);
+        matrices.translate(-width/2.0F,-(panelTop+panelHeight/2.0F),0.0F);
 
-        context.drawTextWithShadow(textRenderer, title, panelLeft + 14, panelTop + 10, 0xFFFFFF);
-        String statusText = waiting ? buildAnimatedStatus() : providerDisplayName() + " AI Agent";
-        context.drawTextWithShadow(textRenderer, statusText, panelLeft + 14, panelTop + 96, waiting ? 0xA0FFA0 : 0xB0B0B8);
-        context.drawTextWithShadow(textRenderer, "Чат: " + chatId.substring(0, Math.min(8, chatId.length())), panelLeft + 190, panelTop + 96, 0x77777F);
-        context.drawTextWithShadow(textRenderer, "Память: " + AiAgentMemory.count(chatId), panelLeft + panelWidth - 110, panelTop + 96, 0xB0B0B8);
+        drawRoundedPanel(context,panelLeft,panelTop,panelLeft+panelWidth,panelTop+panelHeight,0xFF6C7783);
+        drawRoundedPanel(context,panelLeft+1,panelTop+1,panelLeft+panelWidth-1,panelTop+panelHeight-1,0xFF424B55);
+        drawRoundedPanel(context,panelLeft+5,panelTop+5,panelLeft+panelWidth-5,panelTop+83,0xFF353E48);
+        context.fill(panelLeft+14,panelTop+84,panelLeft+panelWidth-14,panelTop+85,0xFF697582);
 
-        int chatTop = panelTop + 116;
-        int chatBottom = panelTop + panelHeight - 49;
-        int maxWidth = panelWidth - 28;
-        int y = chatBottom;
+        context.drawTextWithShadow(textRenderer,title,panelLeft+14,panelTop+10,0xFFFFFFFF);
+        String statusText=waiting?buildAnimatedStatus():providerDisplayName()+" AI Agent";
+        context.drawTextWithShadow(textRenderer,statusText,panelLeft+14,panelTop+96,waiting?0xFF8FE0A0:0xFFD0D6DE);
+        context.drawTextWithShadow(textRenderer,"Чат: "+chatId.substring(0,Math.min(8,chatId.length())),panelLeft+190,panelTop+96,0xFFADB6C1);
+        context.drawTextWithShadow(textRenderer,"Память: "+AiAgentMemory.count(chatId),panelLeft+panelWidth-110,panelTop+96,0xFFD0D6DE);
+
+        int chatTop=panelTop+116,chatBottom=panelTop+panelHeight-49,maxWidth=panelWidth-28,y=chatBottom;
         outer:
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            String[] lines = wrap(messages.get(i), maxWidth);
-            for (int line = lines.length - 1; line >= 0; line--) {
-                y -= 13;
-                if (y < chatTop) break outer;
-                context.drawTextWithShadow(textRenderer, lines[line], panelLeft + 14, y, 0xE8E8E8);
+        for(int i=messages.size()-1;i>=0;i--){
+            String[] lines=wrap(messages.get(i),maxWidth);
+            for(int line=lines.length-1;line>=0;line--){
+                y-=13;
+                if(y<chatTop)break outer;
+                context.drawTextWithShadow(textRenderer,lines[line],panelLeft+14,y,0xFFF0F2F4);
             }
-            y -= 7;
+            y-=7;
         }
-        super.render(context, mouseX, mouseY, delta);
-        AiLogOverlay.render(context, textRenderer, width, height);
+        super.render(context,mouseX,mouseY,delta);
+        matrices.pop();
+    }
+
+    private float animationProgress(){
+        long now=System.nanoTime();
+        float raw=closing
+                ?1.0F-Math.min(1.0F,Math.max(0.0F,(now-closingStartedAt)/(float)ANIMATION_DURATION_NANOS))
+                :Math.min(1.0F,Math.max(0.0F,(now-animationStartedAt)/(float)ANIMATION_DURATION_NANOS));
+        return raw*raw*(3.0F-2.0F*raw);
+    }
+
+    private void beginClose(boolean playSound){
+        if(closing)return;
+        closing=true;closingStartedAt=System.nanoTime();
+        if(playSound)AiUiSound.playClose();
+    }
+
+    private static void drawRoundedPanel(DrawContext context,int left,int top,int right,int bottom,int color){
+        context.fill(left+4,top,right-4,bottom,color);
+        context.fill(left+2,top+1,right-2,bottom-1,color);
+        context.fill(left+1,top+2,right-1,bottom-2,color);
+        context.fill(left,top+4,right,bottom-4,color);
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (AiLogOverlay.mouseClicked(mouseX, mouseY, button, width, height)) return true;
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (AiLogOverlay.mouseDragged(mouseX, mouseY, button, width, height)) return true;
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (AiLogOverlay.mouseReleased(mouseX, mouseY, button)) return true;
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-        if (AiLogOverlay.mouseScrolled(mouseX, mouseY, amount, width, height)) return true;
-        return super.mouseScrolled(mouseX, mouseY, amount);
+    public boolean mouseClicked(double mouseX,double mouseY,int button){
+        if(closing||animationProgress()<0.96F)return true;
+        return super.mouseClicked(mouseX,mouseY,button);
     }
 
     private String buildAnimatedStatus() {
@@ -323,22 +342,19 @@ public final class AiChatScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 257 && messageInput != null && messageInput.isFocused()) {
-            sendMessage();
-            return true;
-        }
-        if (keyCode == 256) {
-            close();
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+    public boolean keyPressed(int keyCode,int scanCode,int modifiers){
+        if(closing)return true;
+        if(keyCode==257&&messageInput!=null&&messageInput.isFocused()){sendMessage();return true;}
+        if(keyCode==256){beginClose(true);return true;}
+        return super.keyPressed(keyCode,scanCode,modifiers);
     }
 
     @Override
-    public void close() {
+    public void close(){beginClose(true);}
+
+    @Override
+    public void removed(){
         AiAgentStatus.clearListener();
-        AiLogOverlay.hide();
-        MinecraftClient.getInstance().setScreen(null);
+        if(AiLogOverlay.isOpen())AiLogOverlay.onParentScreenClosed();
     }
 }

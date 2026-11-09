@@ -41,9 +41,14 @@ public final class AiLogClient {
         }
 
         public int color() {
-            if (isError()) return 0xFFFF6868;
-            if (isWarning()) return 0xFFFFD36A;
-            return 0xFF79D98C;
+            return switch (normalizeLevel(level)) {
+                case "ERROR", "FATAL" -> 0xFFFF6666;
+                case "WARN" -> 0xFFFFC857;
+                case "DEBUG" -> 0xFF80BCEB;
+                case "TRACE" -> 0xFF9AA4B0;
+                case "INFO" -> 0xFF8DDC9B;
+                default -> 0xFFD0D6DE;
+            };
         }
     }
 
@@ -147,7 +152,7 @@ public final class AiLogClient {
     }
 
     private static LogLine append(long timestamp, String level, String logger, String message, boolean custom) {
-        String normalizedLevel = level == null ? "INFO" : level.toUpperCase(Locale.ROOT);
+        String normalizedLevel = normalizeLevel(level);
         String safeMessage = AiLogFile.redactSecrets(message == null ? "" : message);
         if (safeMessage.length() > 1800) safeMessage = safeMessage.substring(0, 1800) + " …";
         String safeLogger = logger == null ? "Minecraft" : logger;
@@ -167,6 +172,18 @@ public final class AiLogClient {
         if (line.isError()) errorCount += physicalLines;
         revision++;
         return line;
+    }
+
+    private static String normalizeLevel(String level) {
+        if(level==null||level.isBlank())return "INFO";
+        String normalized=level.trim().toUpperCase(Locale.ROOT);
+        if(normalized.contains("FATAL")||normalized.contains("CRITICAL"))return "FATAL";
+        if(normalized.contains("ERROR")||normalized.equals("ERR")||normalized.equals("SEVERE"))return "ERROR";
+        if(normalized.contains("WARN"))return "WARN";
+        if(normalized.contains("DEBUG"))return "DEBUG";
+        if(normalized.contains("TRACE"))return "TRACE";
+        if(normalized.contains("INFO"))return "INFO";
+        return normalized;
     }
 
     private static String string(JsonObject object, String key, String fallback) {
