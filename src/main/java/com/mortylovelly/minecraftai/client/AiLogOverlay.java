@@ -228,17 +228,19 @@ public final class AiLogOverlay {
         if(!open||button!=0)return false;
         ensureBounds(screenWidth,screenHeight);
 
+        double hitX=toPanelX(mouseX);
+        double hitY=toPanelY(mouseY);
         boolean compact=compact();
         int panelHeaderHeight=headerHeight();
         int panelHeight=collapsed?panelHeaderHeight:height;
         int right=x+width;
         int bottom=y+panelHeight;
-        if(mouseX<x||mouseX>right||mouseY<y||mouseY>bottom)return false;
+        if(hitX<x||hitX>right||hitY<y||hitY>bottom)return false;
 
         pointerCaptured=true;
 
         if(compact){
-            if(mouseY<=y+panelHeaderHeight){
+            if(hitY<=y+panelHeaderHeight){
                 if(mouseX>=right-57&&mouseX<right-40){
                     copyAllLogs();
                     AiUiSound.playClick();
@@ -263,7 +265,7 @@ public final class AiLogOverlay {
                 dragStartY=y;
                 return true;
             }
-        }else if(mouseY<=y+panelHeaderHeight){
+        }else if(hitY<=y+panelHeaderHeight){
             if(mouseX>=right-94&&mouseX<right-53){
                 copyAllLogs();
                 AiUiSound.playClick();
@@ -291,7 +293,7 @@ public final class AiLogOverlay {
 
         if(collapsed)return true;
 
-        if(mouseX>=right-14&&mouseY>=bottom-14){
+        if(hitX>=right-14&&hitY>=bottom-14){
             resizing=true;
             dragging=false;
             dragMouseX=(int)mouseX;
@@ -303,9 +305,9 @@ public final class AiLogOverlay {
 
         if(!compact){
             int tabY=bottom-22;
-            if(mouseY>=tabY&&mouseY<=bottom-3){
+            if(hitY>=tabY&&hitY<=bottom-3){
                 int tabWidth=(width-24)/3;
-                int selected=Math.max(0,Math.min(2,((int)mouseX-(x+8))/Math.max(1,tabWidth)));
+                int selected=Math.max(0,Math.min(2,((int)hitX-(x+8))/Math.max(1,tabWidth)));
                 if(selected!=filter){
                     filter=selected;
                     scrollOffset=0;
@@ -321,14 +323,16 @@ public final class AiLogOverlay {
     public static boolean mouseDragged(double mouseX,double mouseY,int button,int screenWidth,int screenHeight){
         if(!open||button!=0)return false;
         if(dragging){
-            x=dragStartX+(int)mouseX-dragMouseX;
-            y=dragStartY+(int)mouseY-dragMouseY;
+            float scale=drawScale();
+            x=dragStartX+Math.round((mouseX-dragMouseX)/scale);
+            y=dragStartY+Math.round((mouseY-dragMouseY)/scale);
             ensureBounds(screenWidth,screenHeight);
             return true;
         }
         if(resizing){
-            width=resizeStartWidth+(int)mouseX-dragMouseX;
-            height=resizeStartHeight+(int)mouseY-dragMouseY;
+            float scale=drawScale();
+            width=resizeStartWidth+Math.round((mouseX-dragMouseX)/scale);
+            height=resizeStartHeight+Math.round((mouseY-dragMouseY)/scale);
             ensureBounds(screenWidth,screenHeight);
             cachedWidth=-1;
             return true;
@@ -347,10 +351,12 @@ public final class AiLogOverlay {
     public static boolean mouseScrolled(double mouseX,double mouseY,double amount,int screenWidth,int screenHeight){
         if(!open||collapsed)return false;
         ensureBounds(screenWidth,screenHeight);
+        double hitX=toPanelX(mouseX);
+        double hitY=toPanelY(mouseY);
         boolean compact=compact();
         int contentTop=y+headerHeight()+2;
         int contentBottom=compact?y+height-5:y+height-51;
-        if(mouseX<x||mouseX>x+width||mouseY<contentTop||mouseY>contentBottom)return false;
+        if(hitX<x||hitX>x+width||hitY<contentTop||hitY>contentBottom)return false;
 
         updateCache(MinecraftClient.getInstance().textRenderer,compact?width-16:width-22);
         scrollOffset+=amount>0?3:-3;
