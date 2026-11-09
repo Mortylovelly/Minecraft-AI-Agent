@@ -17,7 +17,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 public final class AiGameChatHistory {
-    private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("minecraft_ai_agent_game_chat.json");
+    private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("minecraft_ai_agent_game_chat.jsonl");
     private static final int MAX_MESSAGES = 1800;
     private static final int MAX_MESSAGE_CHARS = 1200;
     private static final Pattern COORDINATE_PATTERN = Pattern.compile(
@@ -34,9 +34,14 @@ public final class AiGameChatHistory {
         load();
         if (text == null || text.isBlank()) return;
         String safe = text.length() > MAX_MESSAGE_CHARS ? text.substring(0, MAX_MESSAGE_CHARS) : text;
-        MESSAGES.add(new Entry(timestamp, sender == null || sender.isBlank() ? "SERVER" : sender, kind, safe));
-        while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
-        save();
+        Entry entry = new Entry(timestamp, sender == null || sender.isBlank() ? "SERVER" : sender, kind, safe);
+        MESSAGES.add(entry);
+        if (MESSAGES.size() > MAX_MESSAGES) {
+            while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
+            rewriteArchive();
+        } else {
+            appendEntry(entry);
+        }
     }
 
     public static synchronized JsonObject search(String query, String mode, int requestedLimit) {
@@ -99,39 +104,67 @@ public final class AiGameChatHistory {
         loaded = true;
         if (!Files.exists(PATH)) return;
         try {
-            JsonElement root = JsonParser.parseString(Files.readString(PATH, StandardCharsets.UTF_8));
-            if (!root.isJsonArray()) return;
-            for (JsonElement value : root.getAsJsonArray()) {
-                if (!value.isJsonObject()) continue;
-                JsonObject object = value.getAsJsonObject();
-                MESSAGES.add(new Entry(
-                        object.has("timestamp") ? object.get("timestamp").getAsLong() : System.currentTimeMillis(),
-                        object.has("sender") ? object.get("sender").getAsString() : "SERVER",
-                        object.has("kind") ? object.get("kind").getAsString() : "chat",
-                        object.has("text") ? object.get("text").getAsString() : ""
-                ));
+            List<String> lines = Files.readAllLines(PATH, StandardCharsets.UTF_8);
+            for (String line : lines) {
+                if (line.isBlank()) continue;
+                try {
+                    JsonElement value = JsonParser.parseString(line);
+                    if (!value.isJsonObject()) continue;
+                    JsonObject object = value.getAsJsonObject();
+                    MESSAGES.add(new Entry(
+                            object.has("timestamp") ? object.get("timestamp").getAsLong() : System.currentTimeMillis(),
+                            object.has("sender") ? object.get("sender").getAsString() : "SERVER",
+                            object.has("kind") ? object.get("kind").getAsString() : "chat",
+                            object.has("text") ? object.get("text").getAsString() : ""
+                    ));
+                } catch (RuntimeException ignored) {
+                    // Ignore a single malformed record without losing the rest of the archive.
+                }
             }
-            while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
+            if (MESSAGES.size() > MAX_MESSAGES) {
+                while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
+                rewriteArchive();
+            }
         } catch (Exception exception) {
             AiAgentLog.warn("Could not load game chat archive: " + exception.getMessage());
         }
     }
 
-    private static void save() {
-        JsonArray array = new JsonArray();
+    private static void appendEntry(Entry entry) {
+        JsonObject object = new JsonObject();
+        object.addProperty("timestamp", entry.timestamp());
+        object.addProperty("sender", entry.sender());
+        object.addProperty("kind", entry.kind());
+        object.addProperty("text", entry.text());
+        try {
+            Files.createDirectories(PATH.getParent());
+            Files.writeString(
+                    PATH,
+                    object + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND
+            );
+        } catch (IOException exception) {
+            AiAgentLog.warn("Could not append game chat archive: " + exception.getMessage());
+        }
+    }
+
+    private static void rewriteArchive() {
+        StringBuilder content = new StringBuilder();
         for (Entry entry : MESSAGES) {
             JsonObject object = new JsonObject();
             object.addProperty("timestamp", entry.timestamp());
             object.addProperty("sender", entry.sender());
             object.addProperty("kind", entry.kind());
             object.addProperty("text", entry.text());
-            array.add(object);
+            content.append(object).append(System.lineSeparator());
         }
         try {
             Files.createDirectories(PATH.getParent());
-            Files.writeString(PATH, array.toString(), StandardCharsets.UTF_8);
+            Files.writeString(PATH, content.toString(), StandardCharsets.UTF_8);
         } catch (IOException exception) {
-            AiAgentLog.warn("Could not save game chat archive: " + exception.getMessage());
+            AiAgentLog.warn("Could not compact game chat archive: " + exception.getMessage());
         }
     }
 }
