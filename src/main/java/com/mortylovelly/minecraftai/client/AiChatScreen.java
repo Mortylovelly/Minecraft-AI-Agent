@@ -270,11 +270,23 @@ public final class AiChatScreen extends Screen {
         drawRoundedPanel(context,panelLeft+5,panelTop+5,panelLeft+panelWidth-5,panelTop+83,0xFF353E48);
         context.fill(panelLeft+14,panelTop+84,panelLeft+panelWidth-14,panelTop+85,0xFF697582);
 
-        context.drawTextWithShadow(textRenderer,title,panelLeft+14,panelTop+10,0xFFFFFFFF);
+        int titleMaxWidth=Math.max(36,panelWidth-14-414-14);
+        context.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(title.getString(),titleMaxWidth),
+                panelLeft+14,panelTop+10,0xFFFFFFFF);
+
         String statusText=waiting?buildAnimatedStatus():providerDisplayName()+" AI Agent";
-        context.drawTextWithShadow(textRenderer,statusText,panelLeft+14,panelTop+96,waiting?0xFF8FE0A0:0xFFD0D6DE);
-        context.drawTextWithShadow(textRenderer,"Чат: "+chatId.substring(0,Math.min(8,chatId.length())),panelLeft+190,panelTop+96,0xFFADB6C1);
-        context.drawTextWithShadow(textRenderer,"Память: "+AiAgentMemory.count(chatId),panelLeft+panelWidth-110,panelTop+96,0xFFD0D6DE);
+        String chatText="Чат: "+chatId.substring(0,Math.min(8,chatId.length()));
+        String memoryText="Память: "+AiAgentMemory.count(chatId);
+        int statusX=panelLeft+14;
+        int chatX=panelLeft+Math.min(210,panelWidth/3);
+        int memoryX=panelLeft+panelWidth-14-textRenderer.getWidth(memoryText);
+        int statusMax=Math.max(24,chatX-statusX-12);
+        int chatMax=Math.max(24,memoryX-chatX-12);
+        context.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(statusText,statusMax),
+                statusX,panelTop+96,waiting?0xFF8FE0A0:0xFFD0D6DE);
+        context.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(chatText,chatMax),
+                chatX,panelTop+96,0xFFADB6C1);
+        context.drawTextWithShadow(textRenderer,memoryText,memoryX,panelTop+96,0xFFD0D6DE);
 
         int chatTop=panelTop+116,chatBottom=panelTop+panelHeight-49,maxWidth=panelWidth-28,y=chatBottom;
         outer:
