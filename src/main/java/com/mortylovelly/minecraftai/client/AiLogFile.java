@@ -1,5 +1,7 @@
 package com.mortylovelly.minecraftai.client;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -12,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 public final class AiLogFile {
     private static final Object LOCK = new Object();
@@ -105,6 +108,69 @@ public final class AiLogFile {
                 return "";
             }
         }
+    }
+
+    public static JsonObject search(String query,String level,boolean customOnly,int requestedLimit,int requestedOffset){
+        String safeQuery=query==null?"":query.trim().toLowerCase(Locale.ROOT).replace('ё','е');
+        String safeLevel=level==null?"all":level.trim().toLowerCase(Locale.ROOT);
+        if(!List.of("all","error","warning","info","debug","trace").contains(safeLevel))safeLevel="all";
+        int limit=Math.max(1,Math.min(40,requestedLimit));
+        int offset=Math.max(0,Math.min(100000,requestedOffset));
+        JsonArray matches=new JsonArray();
+        long matchedLines=0L,scannedLines=0L;
+        int scannedFiles=0;
+        synchronized(LOCK){
+            try{
+                Files.createDirectories(LOG_DIRECTORY);
+                importLegacyLogs();
+                Path[] files={CURRENT_LOG,PREVIOUS_LOG,OLDEST_LOG};
+                for(Path file:files){
+                    if(!Files.exists(file)||Files.size(file)==0L)continue;
+                    scannedFiles++;
+                    List<String> lines=Files.readAllLines(file,StandardCharsets.UTF_8);
+                    scannedLines+=lines.size();
+                    for(int i=lines.size()-1;i>=0;i--){
+                        String line=lines.get(i);
+                        if(!matchesLevel(line,safeLevel))continue;
+                        if(customOnly&&!line.contains("[CUSTOM]"))continue;
+                        if(!safeQuery.isEmpty()&&!line.toLowerCase(Locale.ROOT).replace('ё','е').contains(safeQuery))continue;
+                        if(matchedLines>=offset&&matches.size()<limit)matches.add(redactSecrets(line));
+                        matchedLines++;
+                    }
+                }
+                JsonObject result=new JsonObject();
+                result.addProperty("ok",true);
+                result.addProperty("source","Minecraft AI Agent Logs HUD archive");
+                result.addProperty("order","newest_first");
+                result.addProperty("query",safeQuery);
+                result.addProperty("level",safeLevel);
+                result.addProperty("custom_only",customOnly);
+                result.addProperty("offset",offset);
+                result.addProperty("retained_files_scanned",scannedFiles);
+                result.addProperty("scanned_lines",scannedLines);
+                result.addProperty("matched_lines",matchedLines);
+                result.addProperty("returned_lines",matches.size());
+                result.addProperty("more_available",matchedLines>(long)offset+matches.size());
+                result.add("lines",matches);
+                return result;
+            }catch(IOException|SecurityException exception){
+                JsonObject result=new JsonObject();
+                result.addProperty("ok",false);
+                result.addProperty("error","Не удалось прочитать архив логов Minecraft AI Agent: "+exception.getMessage());
+                return result;
+            }
+        }
+    }
+
+    private static boolean matchesLevel(String line,String level){
+        return switch(level){
+            case "error" -> line.contains("[ERROR]")||line.contains("[FATAL]");
+            case "warning" -> line.contains("[WARN]")||line.contains("[WARNING]");
+            case "info" -> line.contains("[INFO]");
+            case "debug" -> line.contains("[DEBUG]");
+            case "trace" -> line.contains("[TRACE]");
+            default -> true;
+        };
     }
 
     private static void importLegacyLogs() throws IOException {

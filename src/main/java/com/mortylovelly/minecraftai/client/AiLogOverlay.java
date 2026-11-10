@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class AiLogOverlay {
-    private static final int BASE_WIDTH=360, BASE_HEIGHT=210, DIAGNOSTICS_HEIGHT=120, HEADER_HEIGHT=29;
+    private static final int BASE_WIDTH=360, BASE_HEIGHT=210, DIAGNOSTICS_HEIGHT=164, HEADER_HEIGHT=29;
     private static final float MIN_PANEL_SCALE=0.25F, MAX_PANEL_SCALE=1.6F;
     private static boolean open, visible, settingsOpen, diagnosticsEnabled, dragging, resizing, pointerCaptured;
     private static int x=-1, y=-1, width=300, height=175;
@@ -475,55 +475,43 @@ public final class AiLogOverlay {
         AiDiagnostics.Snapshot data=AiDiagnostics.snapshot(client);
 
         int row1=top+7;
-        drawMetric(context,renderer,"PING",data.pingMs()<0?"—":data.pingMs()+" ms",
-                x+10,row1,pingColor(data.pingMs()));
-        drawMetric(context,renderer,"TPS",data.serverTps()<0?"—":String.format(java.util.Locale.ROOT,"%.1f",data.serverTps()),
-                x+125,row1,tpsColor(data.serverTps()));
-        drawMetric(context,renderer,"TICK",data.serverTickMs()<0?"—":String.format(java.util.Locale.ROOT,"%.0f ms",data.serverTickMs()),
-                x+235,row1,tickColor(data.serverTickMs()));
+        drawMetric(context,renderer,"PING",data.pingMs()<0?"—":data.pingMs()+" ms",x+10,row1,pingColor(data.pingMs()));
+        drawMetric(context,renderer,"TPS",data.serverTps()<0?"—":String.format(java.util.Locale.ROOT,"%.1f",data.serverTps()),x+125,row1,tpsColor(data.serverTps()));
+        drawMetric(context,renderer,"TICK",data.serverTickMs()<0?"—":String.format(java.util.Locale.ROOT,"%.0f ms",data.serverTickMs()),x+235,row1,tickColor(data.serverTickMs()));
 
         int row2=top+21;
-        drawMetric(context,renderer,"FPS",data.currentFps()<=0?"—":Integer.toString(data.currentFps()),
-                x+10,row2,fpsColor(data.currentFps()));
-        drawMetric(context,renderer,"AVG",data.averageFps()<=0?"—":Integer.toString(data.averageFps()),
-                x+105,row2,fpsColor(data.averageFps()));
-        drawMetric(context,renderer,"MAX",data.maxFps()<=0?"—":Integer.toString(data.maxFps()),
-                x+200,row2,fpsColor(data.maxFps()));
+        drawMetric(context,renderer,"FPS",data.currentFps()<=0?"—":Integer.toString(data.currentFps()),x+10,row2,fpsColor(data.currentFps()));
+        drawMetric(context,renderer,"AVG",data.averageFps()<=0?"—":Integer.toString(data.averageFps()),x+105,row2,fpsColor(data.averageFps()));
+        drawMetric(context,renderer,"MAX",data.maxFps()<=0?"—":Integer.toString(data.maxFps()),x+200,row2,fpsColor(data.maxFps()));
         context.drawTextWithShadow(renderer,Text.literal("AVG ON"),x+285,row2,0xFF91DDA5);
 
         int row3=top+35;
-        int resolutionWidth=data.resolutionWidth();
-        int resolutionHeight=data.resolutionHeight();
-        drawMetric(context,renderer,"RES",resolutionWidth>0&&resolutionHeight>0
-                        ?resolutionWidth+"x"+resolutionHeight:"—",
-                x+10,row3,0xFFE0E6ED);
-        drawMetric(context,renderer,"GPU",data.gpuLoad()<0?"—":Math.round(data.gpuLoad())+"%",
-                x+112,row3,percentColor(data.gpuLoad()));
-        drawMetric(context,renderer,"CPU",data.cpuLoad()<0?"—":Math.round(data.cpuLoad())+"%",
-                x+190,row3,percentColor(data.cpuLoad()));
-        String ram=data.totalMemory()<=0?"—":String.format(java.util.Locale.ROOT,"%.1f/%.1fG",
-                data.usedMemory()/1073741824.0,data.totalMemory()/1073741824.0);
+        int resolutionWidth=data.resolutionWidth(),resolutionHeight=data.resolutionHeight();
+        drawMetric(context,renderer,"RES",resolutionWidth>0&&resolutionHeight>0?resolutionWidth+"x"+resolutionHeight:"—",x+10,row3,0xFFE0E6ED);
+        drawMetric(context,renderer,"GPU",data.gpuLoad()<0?"—":Math.round(data.gpuLoad())+"%",x+112,row3,percentColor(data.gpuLoad()));
+        drawMetric(context,renderer,"CPU",data.cpuLoad()<0?"—":Math.round(data.cpuLoad())+"%",x+190,row3,percentColor(data.cpuLoad()));
+        String ram=data.totalMemory()<=0?"—":String.format(java.util.Locale.ROOT,"%.1f/%.1fG",data.usedMemory()/1073741824.0,data.totalMemory()/1073741824.0);
         float ramPercent=data.totalMemory()<=0?-1.0F:data.usedMemory()*100.0F/data.totalMemory();
         drawMetric(context,renderer,"RAM",ram,x+265,row3,percentColor(ramPercent));
 
         int row4=top+49;
         if(client.player!=null){
-            String coordinates=String.format(java.util.Locale.ROOT,"%.1f  %.1f  %.1f",
-                    client.player.getX(),client.player.getY(),client.player.getZ());
+            String coordinates=String.format(java.util.Locale.ROOT,"%.1f  %.1f  %.1f",client.player.getX(),client.player.getY(),client.player.getZ());
             context.drawTextWithShadow(renderer,Text.literal("XYZ"),x+10,row4,0xFFB9C4D0);
             context.drawTextWithShadow(renderer,Text.literal(coordinates),x+34,row4,0xFFE4E9EF);
         }
         if(client.world!=null){
             String dimension=client.world.getRegistryKey().getValue().getPath().toUpperCase(java.util.Locale.ROOT);
             context.drawTextWithShadow(renderer,Text.literal("DIM"),x+265,row4,0xFFB9C4D0);
-            context.drawTextWithShadow(renderer,Text.literal(renderer.trimToWidth(dimension,BASE_WIDTH-305)),
-                    x+289,row4,0xFFD0D8E1);
+            context.drawTextWithShadow(renderer,Text.literal(renderer.trimToWidth(dimension,BASE_WIDTH-305)),x+289,row4,0xFFD0D8E1);
         }
 
-        int chartTop=top+64;
         int chartWidth=(BASE_WIDTH-22)/2;
-        drawHistoryChart(context,renderer,x+8,chartTop,chartWidth,42,"FPS",data.fpsHistory(),true);
-        drawHistoryChart(context,renderer,x+14+chartWidth,chartTop,chartWidth,42,"PING",data.pingHistory(),false);
+        int firstChartTop=top+64,secondChartTop=top+110;
+        drawHistoryChart(context,renderer,x+8,firstChartTop,chartWidth,42,"FPS",data.fpsHistory(),"FPS");
+        drawHistoryChart(context,renderer,x+14+chartWidth,firstChartTop,chartWidth,42,"TPS",data.tpsHistory(),"TPS");
+        drawHistoryChart(context,renderer,x+8,secondChartTop,chartWidth,42,"GPU",data.gpuHistory(),"PERCENT");
+        drawHistoryChart(context,renderer,x+14+chartWidth,secondChartTop,chartWidth,42,"CPU",data.cpuHistory(),"PERCENT");
     }
 
     private static void drawMetric(DrawContext context,TextRenderer renderer,String label,String value,
@@ -534,30 +522,24 @@ public final class AiLogOverlay {
     }
 
     private static void drawHistoryChart(DrawContext context,TextRenderer renderer,int left,int top,
-                                         int width,int height,String title,float[] values,boolean fps){
+                                         int width,int height,String title,float[] values,String metric){
         rounded(context,left,top,left+width,top+height,0xFF37414C);
         context.drawTextWithShadow(renderer,Text.literal(title),left+6,top+4,0xFFD5DDE6);
-        int graphTop=top+16;
-        int graphBottom=top+height-4;
-        int graphHeight=Math.max(1,graphBottom-graphTop);
-        int graphWidth=Math.max(1,width-12);
-        int count=values.length;
-        int barWidth=Math.max(1,graphWidth/Math.max(1,count));
-        float maximum=fps?60.0F:100.0F;
-        for(float value:values){
-            if(value>maximum)maximum=value;
-        }
+        int graphTop=top+16,graphBottom=top+height-4;
+        int graphHeight=Math.max(1,graphBottom-graphTop),graphWidth=Math.max(1,width-12);
+        int count=values.length,barWidth=Math.max(1,graphWidth/Math.max(1,count));
+        float maximum=switch(metric){case "FPS"->60.0F;case "TPS"->20.0F;default->100.0F;};
+        for(float value:values)if(value>maximum)maximum=value;
         maximum=Math.max(1.0F,maximum*1.12F);
         for(int i=0;i<count;i++){
             float value=values[i];
-            if(value<0.0F)continue;
+            if(value<0.0F||!Float.isFinite(value))continue;
             int barHeight=value<=0.0F?0:Math.max(1,Math.round(value/maximum*graphHeight));
             if(barHeight<=0)continue;
             int barX=left+6+i*barWidth;
             if(barX>=left+width-4)break;
-            int color=fps?fpsColor(value):pingColor(Math.round(value));
-            context.fill(barX,graphBottom-barHeight,Math.min(barX+barWidth-1,left+width-5),
-                    graphBottom,color);
+            int color=switch(metric){case "FPS"->fpsColor(value);case "TPS"->tpsColor(value);default->percentColor(value);};
+            context.fill(barX,graphBottom-barHeight,Math.min(barX+barWidth-1,left+width-5),graphBottom,color);
         }
     }
 

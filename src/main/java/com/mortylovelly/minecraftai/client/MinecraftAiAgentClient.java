@@ -31,10 +31,13 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
 
         HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
             MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.world != null && client.currentScreen == null) {
+            if (client.player != null && client.world != null) {
+                // Sample frames while Minecraft screens (including the AI chat) are open too.
                 AiDiagnostics.onFrame(client);
-                AiLogOverlay.render(drawContext, client.textRenderer,
-                        client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
+                if (client.currentScreen == null) {
+                    AiLogOverlay.render(drawContext, client.textRenderer,
+                            client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
+                }
             }
         });
 
