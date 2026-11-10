@@ -126,27 +126,6 @@ public final class AiLogOverlay {
         return y+(unanimatedY-y)/contentScale;
     }
 
-    private static float drawScale(){
-        return 0.92F+animationProgress()*0.08F;
-    }
-
-    private static float drawYOffset(){
-        return (1.0F-animationProgress())*5.0F;
-    }
-
-    public static double toPanelX(double screenX){
-        float scale=drawScale();
-        double center=x+width/2.0;
-        return center+(screenX-center)/scale;
-    }
-
-    public static double toPanelY(double screenY){
-        float scale=drawScale();
-        int panelHeight=collapsed?headerHeight():height;
-        double center=y+panelHeight/2.0;
-        return center+(screenY-center-drawYOffset())/scale;
-    }
-
     public static void render(DrawContext context,TextRenderer renderer,int screenWidth,int screenHeight){
         float animationScale=drawScale();
         if(!visible||animationProgress()<=0.005F)return;
@@ -186,8 +165,6 @@ public final class AiLogOverlay {
                 DisplayLine line=CACHED_LINES.get(CACHED_LINES.size()-1);
                 latest=line.text();
                 latestColor=line.color();
-            }else if(!AiLogClient.getConnectionStatus().isBlank()){
-                latest=AiLogClient.getConnectionStatus();
             }
             context.drawTextWithShadow(renderer,
                     Text.literal(renderer.trimToWidth(latest,BASE_WIDTH-18)),
@@ -340,10 +317,10 @@ public final class AiLogOverlay {
         }
         if(resizing){
             float animationScale=drawScale();
-            float deltaScale=0.5F*(
-                    (float)(mouseX-dragMouseX)/BASE_WIDTH
-                    +(float)(mouseY-dragMouseY)/BASE_HEIGHT
-            )/Math.max(0.01F,animationScale);
+            float horizontalDelta=(float)(mouseX-dragMouseX)/BASE_WIDTH;
+            float verticalDelta=(float)(mouseY-dragMouseY)/BASE_HEIGHT;
+            float deltaScale=(Math.abs(horizontalDelta)>=Math.abs(verticalDelta)
+                    ?horizontalDelta:verticalDelta)/Math.max(0.01F,animationScale);
             float targetScale=resizeStartScale+deltaScale;
             width=Math.round(BASE_WIDTH*targetScale);
             height=Math.round(BASE_HEIGHT*targetScale);
