@@ -206,7 +206,10 @@ public final class AiLogOverlay {
 
         // A flat log surface avoids a second thick frame inside the thin outer border.
         context.fill(x+5,contentTop-3,right-5,contentBottom+2,0xFF39424D);
-        context.enableScissor(x+8,contentTop-1,right-8,contentBottom+1);
+        // updateCache() wraps every line to the logical panel width and the render loop
+        // draws only the calculated visible line count. Avoid GUI scissor here: its box
+        // is not composed with this panel's MatrixStack scale on 1.20.1, creating a
+        // fixed-size invisible clipping wall when the HUD is resized.
         int lineY=contentTop;
         if(CACHED_LINES.isEmpty()){
             String empty=AiLogClient.getConnectionStatus().isBlank()
@@ -221,7 +224,6 @@ public final class AiLogOverlay {
                 lineY+=lineHeight;
             }
         }
-        context.disableScissor();
 
         drawStats(context,renderer,statsY,BASE_WIDTH);
         drawTabs(context,renderer,tabY,BASE_WIDTH);
