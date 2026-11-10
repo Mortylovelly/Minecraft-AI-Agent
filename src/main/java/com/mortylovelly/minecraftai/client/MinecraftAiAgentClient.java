@@ -27,10 +27,12 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
         System.setProperty("java.net.preferIPv4Addresses", "true");
 
         AiAgentNetwork.initializeClient();
+        AiDiagnostics.initialize();
 
         HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null && client.world != null && client.currentScreen == null) {
+                AiDiagnostics.onFrame(client);
                 AiLogOverlay.render(drawContext, client.textRenderer,
                         client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
             }
@@ -46,6 +48,7 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             AiLogClient.resetForWorldJoin();
+            AiDiagnostics.onWorldJoin();
             AiAgentNetwork.subscribeToLogs();
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {

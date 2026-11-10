@@ -20,6 +20,7 @@ public final class AiAgentNetwork {
     private static final Identifier LOG_SUBSCRIBE = new Identifier("minecraft_ai_agent", "log_subscribe");
     private static final Identifier LOG_BATCH = new Identifier("minecraft_ai_agent", "log_batch");
     private static final Identifier LOG_STATUS = new Identifier("minecraft_ai_agent", "log_status");
+    private static final Identifier DIAGNOSTICS = new Identifier("minecraft_ai_agent", "diagnostics");
 
     private static final Map<String, CompletableFuture<JsonObject>> PENDING = new ConcurrentHashMap<>();
     private static boolean initialized;
@@ -42,6 +43,12 @@ public final class AiAgentNetwork {
                     future.complete(error("Сервер вернул некорректный ответ: " + exception.getMessage()));
                 }
             });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(DIAGNOSTICS, (client, handler, buffer, responseSender) -> {
+            final float tps=buffer.readFloat();
+            final float tickMs=buffer.readFloat();
+            client.execute(() -> AiDiagnostics.setServerMetrics(tps,tickMs));
         });
 
         ClientPlayNetworking.registerGlobalReceiver(LOG_BATCH, (client, handler, buffer, responseSender) -> {
@@ -117,6 +124,7 @@ public final class AiAgentNetwork {
         }
         PENDING.clear();
         AiLogClient.onDisconnect();
+        AiDiagnostics.onDisconnect();
     }
 
     private static JsonObject error(String message) {

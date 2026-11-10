@@ -3,6 +3,7 @@ package com.mortylovelly.minecraftai;
 import com.mortylovelly.minecraftai.server.AiAgentEntityController;
 import com.mortylovelly.minecraftai.server.AiAgentServerLogBridge;
 import com.mortylovelly.minecraftai.server.AiAgentServerNetworking;
+import com.mortylovelly.minecraftai.server.AiServerDiagnostics;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.CommandManager;
@@ -14,6 +15,7 @@ public final class MinecraftAiAgent implements ModInitializer {
     @Override
     public void onInitialize() {
         AiAgentServerNetworking.register();
+        AiServerDiagnostics.register();
         AiAgentEntityController.register();
         AiAgentServerLogBridge.register();
 
