@@ -12,7 +12,7 @@ public final class AiServerDiagnostics {
     private static final Identifier CHANNEL=new Identifier("minecraft_ai_agent","diagnostics");
     private static final int SAMPLE_COUNT=20;
     private static final long[] TICK_TIMES=new long[SAMPLE_COUNT];
-    private static long tickStartedNanos;
+    private static long lastTickStartedNanos;
     private static int sampleCount;
     private static int nextSample;
     private static int ticksSinceUpdate;
@@ -20,17 +20,22 @@ public final class AiServerDiagnostics {
     private AiServerDiagnostics(){}
 
     public static void register(){
-        ServerTickEvents.START_SERVER_TICK.register(server->tickStartedNanos=System.nanoTime());
+        ServerTickEvents.START_SERVER_TICK.register(AiServerDiagnostics::onStartTick);
         ServerTickEvents.END_SERVER_TICK.register(AiServerDiagnostics::onEndTick);
     }
 
-    private static void onEndTick(MinecraftServer server){
-        if(tickStartedNanos==0L)return;
-        long duration=Math.max(1L,System.nanoTime()-tickStartedNanos);
-        TICK_TIMES[nextSample]=duration;
-        nextSample=(nextSample+1)%SAMPLE_COUNT;
-        sampleCount=Math.min(SAMPLE_COUNT,sampleCount+1);
+    private static void onStartTick(MinecraftServer server){
+        long now=System.nanoTime();
+        if(lastTickStartedNanos!=0L){
+            long interval=Math.max(1L,now-lastTickStartedNanos);
+            TICK_TIMES[nextSample]=interval;
+            nextSample=(nextSample+1)%SAMPLE_COUNT;
+            sampleCount=Math.min(SAMPLE_COUNT,sampleCount+1);
+        }
+        lastTickStartedNanos=now;
+    }
 
+    private static void onEndTick(MinecraftServer server){
         if(++ticksSinceUpdate<10)return;
         ticksSinceUpdate=0;
 
