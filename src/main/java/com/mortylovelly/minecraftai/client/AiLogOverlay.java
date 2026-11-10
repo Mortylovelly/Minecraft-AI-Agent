@@ -16,7 +16,7 @@ import java.util.List;
 
 public final class AiLogOverlay {
     private static boolean open, visible, collapsed, dragging, resizing, pointerCaptured;
-    private static int x=-1, y=-1, width=120, height=70;
+    private static int x=-1, y=-1, width=360, height=210;
     private static int dragMouseX, dragMouseY, dragStartX, dragStartY, resizeStartWidth, resizeStartHeight;
     private static int filter=AiLogClient.FILTER_ALL, scrollOffset;
     private static long cachedRevision=-1L;
@@ -383,9 +383,9 @@ public final class AiLogOverlay {
 
     private static void ensureBounds(int screenWidth,int screenHeight){
         int maxWidth=Math.max(120,screenWidth/2);
-        int maxHeight=Math.max(70,screenHeight/2);
-        int minWidth=Math.min(120,maxWidth);
-        int minHeight=Math.min(70,maxHeight);
+        int maxHeight=Math.max(70,Math.min(Math.max(70,screenHeight-8),screenHeight*3/4));
+        int minWidth=Math.min(240,maxWidth);
+        int minHeight=Math.min(140,maxHeight);
         width=Math.max(minWidth,Math.min(width,maxWidth));
         height=Math.max(minHeight,Math.min(height,maxHeight));
 
