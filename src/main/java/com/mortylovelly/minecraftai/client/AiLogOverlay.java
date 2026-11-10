@@ -4,8 +4,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.Window;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.system.MemoryStack;
@@ -15,9 +13,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class AiLogOverlay {
+    private static final int BASE_WIDTH=360, BASE_HEIGHT=210, COLLAPSED_HEIGHT=24, HEADER_HEIGHT=29;
+    private static final float MIN_PANEL_SCALE=0.25F, MAX_PANEL_SCALE=1.6F;
     private static boolean open, visible, collapsed, dragging, resizing, pointerCaptured;
-    private static int x=-1, y=-1, width=360, height=210;
-    private static int dragMouseX, dragMouseY, dragStartX, dragStartY, resizeStartWidth, resizeStartHeight;
+    private static int x=-1, y=-1, width=300, height=175;
+    private static int dragMouseX, dragMouseY, dragStartX, dragStartY;
+    private static float resizeStartScale;
     private static int filter=AiLogClient.FILTER_ALL, scrollOffset;
     private static long cachedRevision=-1L;
     private static int cachedWidth=-1, cachedFilter=-1;
@@ -88,12 +89,41 @@ public final class AiLogOverlay {
         return progress;
     }
 
-    private static boolean compact(){
-        return width<240||height<140;
+    private static int headerHeight(){
+        return HEADER_HEIGHT;
     }
 
-    private static int headerHeight(){
-        return compact()?24:29;
+    private static float panelScale(){
+        return width/(float)BASE_WIDTH;
+    }
+
+    private static float drawScale(){
+        return 0.92F+animationProgress()*0.08F;
+    }
+
+    private static float drawYOffset(){
+        return (1.0F-animationProgress())*5.0F;
+    }
+
+    private static int visiblePanelHeight(){
+        float scale=panelScale();
+        return Math.round((collapsed?COLLAPSED_HEIGHT:BASE_HEIGHT)*scale);
+    }
+
+    public static double toPanelX(double screenX){
+        float animationScale=drawScale();
+        float contentScale=panelScale();
+        double centerX=x+width/2.0;
+        double unanimatedX=centerX+(screenX-centerX)/animationScale;
+        return x+(unanimatedX-x)/contentScale;
+    }
+
+    public static double toPanelY(double screenY){
+        float animationScale=drawScale();
+        float contentScale=panelScale();
+        double centerY=y+visiblePanelHeight()/2.0;
+        double unanimatedY=centerY+(screenY-centerY-drawYOffset())/animationScale;
+        return y+(unanimatedY-y)/contentScale;
     }
 
     private static float drawScale(){
@@ -118,116 +148,112 @@ public final class AiLogOverlay {
     }
 
     public static void render(DrawContext context,TextRenderer renderer,int screenWidth,int screenHeight){
-        float progress=animationProgress();
-        if(!visible||progress<=0.005F)return;
+        float animationScale=drawScale();
+        if(!visible||animationProgress()<=0.005F)return;
         ensureBounds(screenWidth,screenHeight);
 
-        boolean compact=compact();
-        int panelHeaderHeight=headerHeight();
-        int panelHeight=collapsed?panelHeaderHeight:height;
-        int right=x+width;
-        int bottom=y+panelHeight;
+        float contentScale=panelScale();
+        int panelLogicalHeight=collapsed?COLLAPSED_HEIGHT:BASE_HEIGHT;
+        int right=x+BASE_WIDTH;
+        int bottom=y+panelLogicalHeight;
+        float displayWidth=width;
+        float displayHeight=visiblePanelHeight();
+        float centerX=x+displayWidth/2.0F;
+        float centerY=y+displayHeight/2.0F;
         Window pointerWindow=MinecraftClient.getInstance().getWindow();
         double[] rawPointer=getScaledPointerPosition(pointerWindow);
         double panelMouseX=toPanelX(rawPointer[0]);
         double panelMouseY=toPanelY(rawPointer[1]);
-        float scale=0.92F+progress*0.08F;
 
         var matrices=context.getMatrices();
         matrices.push();
-        matrices.translate(x+width/2.0F,y+panelHeight/2.0F+(1.0F-progress)*5.0F,0.0F);
-        matrices.scale(scale,scale,1.0F);
-        matrices.translate(-(x+width/2.0F),-(y+panelHeight/2.0F),0.0F);
+        // Scale the complete logical panel (text, buttons, counters and log lines)
+        // as one surface, then apply the short opening/closing animation.
+        matrices.translate(centerX,centerY+drawYOffset(),0.0F);
+        matrices.scale(animationScale,animationScale,1.0F);
+        matrices.translate(-centerX,-centerY,0.0F);
+        matrices.translate(x,y,0.0F);
+        matrices.scale(contentScale,contentScale,1.0F);
+        matrices.translate(-x,-y,0.0F);
 
-        rounded(context,x,y,right,bottom,0xFF74808D);
-        rounded(context,x+1,y+1,right-1,bottom-1,0xFF424B56);
-        rounded(context,x+3,y+2,right-3,y+panelHeaderHeight-1,0xFF343D47);
-        context.fill(x+5,y+panelHeaderHeight-1,right-5,y+panelHeaderHeight,0xFF687482);
+        if(collapsed){
+            context.fill(x,y,right,bottom,0xFF77818B);
+            context.fill(x+1,y+1,right-1,bottom-1,0xFF303842);
+            updateCache(renderer,BASE_WIDTH-16);
+            String latest="Ожидание логов...";
+            int latestColor=0xFFD0D6DE;
+            if(!CACHED_LINES.isEmpty()){
+                DisplayLine line=CACHED_LINES.get(CACHED_LINES.size()-1);
+                latest=line.text();
+                latestColor=line.color();
+            }else if(!AiLogClient.getConnectionStatus().isBlank()){
+                latest=AiLogClient.getConnectionStatus();
+            }
+            context.drawTextWithShadow(renderer,
+                    Text.literal(renderer.trimToWidth(latest,BASE_WIDTH-18)),
+                    x+8,y+7,latestColor);
+            matrices.pop();
+            return;
+        }
 
-        if(compact){
-            context.drawTextWithShadow(renderer,Text.literal("LOGS"),x+8,y+8,0xFFFFFFFF);
-            int copyX=right-57,collapseX=right-38,closeX=right-19;
-            headerButton(context,renderer,copyX,y+4,16,"C",false,panelMouseX,panelMouseY);
-            headerButton(context,renderer,collapseX,y+4,16,collapsed?"+":"−",false,panelMouseX,panelMouseY);
-            headerButton(context,renderer,closeX,y+4,16,"×",true,panelMouseX,panelMouseY);
+        // One-pixel panel outline; keep the border visually quiet.
+        context.fill(x,y,right,bottom,0xFF77818B);
+        context.fill(x+1,y+1,right-1,bottom-1,0xFF424B56);
+        context.fill(x+2,y+2,right-2,y+HEADER_HEIGHT-1,0xFF343D47);
+        context.fill(x+2,y+HEADER_HEIGHT-1,right-2,y+HEADER_HEIGHT,0xFF687482);
+
+        context.drawTextWithShadow(renderer,Text.literal("SERVER LOGS"),x+11,y+9,0xFFFFFFFF);
+
+        boolean copied=System.currentTimeMillis()<copyNoticeUntil;
+        String status=copied?copyNotice:AiLogClient.getConnectionStatus();
+        int statusColor=copied||AiLogClient.isConnected()?0xFF91DDA5:0xFFFFD27A;
+        int statusMax=right-94-(x+112)-5;
+        if(statusMax>18){
+            context.drawTextWithShadow(renderer,
+                    Text.literal(renderer.trimToWidth(status,statusMax)),x+112,y+9,statusColor);
+        }
+
+        headerButton(context,renderer,right-94,y+6,39,"COPY",false,panelMouseX,panelMouseY);
+        headerButton(context,renderer,right-50,y+6,19,"−",false,panelMouseX,panelMouseY);
+        headerButton(context,renderer,right-27,y+6,19,"×",true,panelMouseX,panelMouseY);
+
+        updateCache(renderer,BASE_WIDTH-22);
+        int tabY=bottom-22;
+        int statsY=tabY-22;
+        int contentTop=y+35;
+        int contentBottom=statsY-4;
+        int lineHeight=11;
+        int visibleLines=Math.max(1,(contentBottom-contentTop)/lineHeight);
+        int end=Math.max(0,CACHED_LINES.size()-scrollOffset);
+        int start=Math.max(0,end-visibleLines);
+
+        // A flat log surface avoids a second thick frame inside the thin outer border.
+        context.fill(x+5,contentTop-3,right-5,contentBottom+2,0xFF39424D);
+        context.enableScissor(x+8,contentTop-1,right-8,contentBottom+1);
+        int lineY=contentTop;
+        if(CACHED_LINES.isEmpty()){
+            String empty=AiLogClient.getConnectionStatus().isBlank()
+                    ?"Ожидание логов...":AiLogClient.getConnectionStatus();
+            context.drawTextWithShadow(renderer,
+                    Text.literal(renderer.trimToWidth(empty,BASE_WIDTH-28)),
+                    x+11,lineY,0xFFD0D6DE);
         }else{
-            context.drawTextWithShadow(renderer,Text.literal("SERVER LOGS"),x+11,y+9,0xFFFFFFFF);
-
-            boolean copied=System.currentTimeMillis()<copyNoticeUntil;
-            String status=copied?copyNotice:AiLogClient.getConnectionStatus();
-            int statusColor=copied||AiLogClient.isConnected()?0xFF91DDA5:0xFFFFD27A;
-            int statusMax=right-94-(x+112)-5;
-            if(statusMax>18){
-                context.drawTextWithShadow(renderer,
-                        Text.literal(renderer.trimToWidth(status,statusMax)),x+112,y+9,statusColor);
+            for(int i=start;i<end;i++){
+                DisplayLine line=CACHED_LINES.get(i);
+                context.drawTextWithShadow(renderer,Text.literal(line.text()),x+10,lineY,line.color());
+                lineY+=lineHeight;
             }
-
-            headerButton(context,renderer,right-94,y+6,39,"COPY",false,panelMouseX,panelMouseY);
-            headerButton(context,renderer,right-50,y+6,19,collapsed?"+":"−",false,panelMouseX,panelMouseY);
-            headerButton(context,renderer,right-27,y+6,19,"×",true,panelMouseX,panelMouseY);
         }
+        context.disableScissor();
 
-        if(!collapsed){
-            updateCache(renderer,compact?width-16:width-22);
-            if(compact){
-                int contentTop=y+panelHeaderHeight+2;
-                int contentBottom=bottom-5;
-                int lineHeight=9;
-                int visibleLines=Math.max(1,(contentBottom-contentTop)/lineHeight);
-                int end=Math.max(0,CACHED_LINES.size()-scrollOffset);
-                int start=Math.max(0,end-visibleLines);
-                rounded(context,x+4,contentTop-1,right-4,contentBottom+1,0xFF39424D);
-                context.enableScissor(x+5,contentTop,right-5,contentBottom);
-                int lineY=contentTop+1;
-                if(CACHED_LINES.isEmpty()){
-                    String empty="Ожидание логов...";
-                    context.drawTextWithShadow(renderer,Text.literal(renderer.trimToWidth(empty,width-16)),
-                            x+7,lineY,0xFFD0D6DE);
-                }else{
-                    for(int i=start;i<end;i++){
-                        DisplayLine line=CACHED_LINES.get(i);
-                        context.drawTextWithShadow(renderer,
-                                Text.literal(renderer.trimToWidth(line.text(),width-16)),
-                                x+7,lineY,line.color());
-                        lineY+=lineHeight;
-                    }
-                }
-                context.disableScissor();
-            }else{
-                int tabY=bottom-22;
-                int statsY=tabY-22;
-                int contentTop=y+35;
-                int contentBottom=statsY-4;
-                int lineHeight=11;
-                int visibleLines=Math.max(1,(contentBottom-contentTop)/lineHeight);
-                int end=Math.max(0,CACHED_LINES.size()-scrollOffset);
-                int start=Math.max(0,end-visibleLines);
-                rounded(context,x+5,contentTop-3,right-5,contentBottom+2,0xFF39424D);
-                context.enableScissor(x+8,contentTop-1,right-8,contentBottom+1);
-                int lineY=contentTop;
-                if(CACHED_LINES.isEmpty()){
-                    String empty=AiLogClient.getConnectionStatus().isBlank()
-                            ?"Ожидание логов...":AiLogClient.getConnectionStatus();
-                    context.drawTextWithShadow(renderer,Text.literal(renderer.trimToWidth(empty,width-28)),
-                            x+11,lineY,0xFFD0D6DE);
-                }else{
-                    for(int i=start;i<end;i++){
-                        DisplayLine line=CACHED_LINES.get(i);
-                        context.drawTextWithShadow(renderer,Text.literal(line.text()),x+10,lineY,line.color());
-                        lineY+=lineHeight;
-                    }
-                }
-                context.disableScissor();
-                drawStats(context,renderer,statsY,width);
-                drawTabs(context,renderer,tabY,width);
-                drawScrollbar(context,contentTop,contentBottom,visibleLines,CACHED_LINES.size(),right-7);
-            }
+        drawStats(context,renderer,statsY,BASE_WIDTH);
+        drawTabs(context,renderer,tabY,BASE_WIDTH);
+        drawScrollbar(context,contentTop,contentBottom,visibleLines,CACHED_LINES.size(),right-7);
 
-            int gripX=right-10,gripY=bottom-10;
-            context.fill(gripX+4,gripY+7,gripX+8,gripY+8,0xFFB1BAC5);
-            context.fill(gripX+6,gripY+4,gripX+8,gripY+5,0xFFB1BAC5);
-            context.fill(gripX+7,gripY+1,gripX+8,gripY+2,0xFFB1BAC5);
-        }
+        int gripX=right-10,gripY=bottom-10;
+        context.fill(gripX+4,gripY+7,gripX+8,gripY+8,0xFFB1BAC5);
+        context.fill(gripX+6,gripY+4,gripX+8,gripY+5,0xFFB1BAC5);
+        context.fill(gripX+7,gripY+1,gripX+8,gripY+2,0xFFB1BAC5);
         matrices.pop();
     }
 
@@ -237,51 +263,33 @@ public final class AiLogOverlay {
 
         double hitX=toPanelX(mouseX);
         double hitY=toPanelY(mouseY);
-        boolean compact=compact();
-        int panelHeaderHeight=headerHeight();
-        int panelHeight=collapsed?panelHeaderHeight:height;
-        int right=x+width;
-        int bottom=y+panelHeight;
+        int panelLogicalHeight=collapsed?COLLAPSED_HEIGHT:BASE_HEIGHT;
+        int right=x+BASE_WIDTH;
+        int bottom=y+panelLogicalHeight;
         if(hitX<x||hitX>right||hitY<y||hitY>bottom)return false;
 
         pointerCaptured=true;
 
-        if(compact){
-            if(hitY<=y+panelHeaderHeight){
-                if(hitX>=right-57&&hitX<right-40){
-                    copyAllLogs();
-                    AiUiSound.playClick();
-                    return true;
-                }
-                if(hitX>=right-38&&hitX<right-21){
-                    collapsed=!collapsed;
-                    dragging=false;
-                    resizing=false;
-                    AiUiSound.playClick();
-                    return true;
-                }
-                if(hitX>=right-19){
-                    setOpen(false);
-                    return true;
-                }
-                dragging=true;
-                resizing=false;
-                dragMouseX=(int)mouseX;
-                dragMouseY=(int)mouseY;
-                dragStartX=x;
-                dragStartY=y;
-                return true;
-            }
-        }else if(hitY<=y+panelHeaderHeight){
+        // The collapsed strip contains only the latest log line.
+        // Clicking it restores the full panel; no hidden controls are drawn there.
+        if(collapsed){
+            collapsed=false;
+            cachedRevision=-1L;
+            AiUiSound.playClick();
+            return true;
+        }
+
+        if(hitY<=y+HEADER_HEIGHT){
             if(hitX>=right-94&&hitX<right-53){
                 copyAllLogs();
                 AiUiSound.playClick();
                 return true;
             }
             if(hitX>=right-50&&hitX<right-29){
-                collapsed=!collapsed;
+                collapsed=true;
                 dragging=false;
                 resizing=false;
+                pointerCaptured=false;
                 AiUiSound.playClick();
                 return true;
             }
@@ -291,38 +299,33 @@ public final class AiLogOverlay {
             }
             dragging=true;
             resizing=false;
-            dragMouseX=(int)mouseX;
-            dragMouseY=(int)mouseY;
+            dragMouseX=(int)Math.round(mouseX);
+            dragMouseY=(int)Math.round(mouseY);
             dragStartX=x;
             dragStartY=y;
             return true;
         }
 
-        if(collapsed)return true;
-
         if(hitX>=right-14&&hitY>=bottom-14){
             resizing=true;
             dragging=false;
-            dragMouseX=(int)mouseX;
-            dragMouseY=(int)mouseY;
-            resizeStartWidth=width;
-            resizeStartHeight=height;
+            dragMouseX=(int)Math.round(mouseX);
+            dragMouseY=(int)Math.round(mouseY);
+            resizeStartScale=panelScale();
             return true;
         }
 
-        if(!compact){
-            int tabY=bottom-22;
-            if(hitY>=tabY&&hitY<=bottom-3){
-                int tabWidth=(width-24)/3;
-                int selected=Math.max(0,Math.min(2,((int)hitX-(x+8))/Math.max(1,tabWidth)));
-                if(selected!=filter){
-                    filter=selected;
-                    scrollOffset=0;
-                    cachedRevision=-1L;
-                    AiUiSound.playClick();
-                }
-                return true;
+        int tabY=bottom-22;
+        if(hitY>=tabY&&hitY<=bottom-3){
+            int tabWidth=(BASE_WIDTH-24)/3;
+            int selected=Math.max(0,Math.min(2,((int)hitX-(x+8))/Math.max(1,tabWidth)));
+            if(selected!=filter){
+                filter=selected;
+                scrollOffset=0;
+                cachedRevision=-1L;
+                AiUiSound.playClick();
             }
+            return true;
         }
         return true;
     }
@@ -330,16 +333,20 @@ public final class AiLogOverlay {
     public static boolean mouseDragged(double mouseX,double mouseY,int button,int screenWidth,int screenHeight){
         if(!open||button!=0)return false;
         if(dragging){
-            float scale=drawScale();
-            x=dragStartX+(int)Math.round((mouseX-dragMouseX)/scale);
-            y=dragStartY+(int)Math.round((mouseY-dragMouseY)/scale);
+            x=dragStartX+(int)Math.round(mouseX-dragMouseX);
+            y=dragStartY+(int)Math.round(mouseY-dragMouseY);
             ensureBounds(screenWidth,screenHeight);
             return true;
         }
         if(resizing){
-            float scale=drawScale();
-            width=resizeStartWidth+(int)Math.round((mouseX-dragMouseX)/scale);
-            height=resizeStartHeight+(int)Math.round((mouseY-dragMouseY)/scale);
+            float animationScale=drawScale();
+            float deltaScale=0.5F*(
+                    (float)(mouseX-dragMouseX)/BASE_WIDTH
+                    +(float)(mouseY-dragMouseY)/BASE_HEIGHT
+            )/Math.max(0.01F,animationScale);
+            float targetScale=resizeStartScale+deltaScale;
+            width=Math.round(BASE_WIDTH*targetScale);
+            height=Math.round(BASE_HEIGHT*targetScale);
             ensureBounds(screenWidth,screenHeight);
             cachedWidth=-1;
             return true;
@@ -360,14 +367,13 @@ public final class AiLogOverlay {
         ensureBounds(screenWidth,screenHeight);
         double hitX=toPanelX(mouseX);
         double hitY=toPanelY(mouseY);
-        boolean compact=compact();
-        int contentTop=y+headerHeight()+2;
-        int contentBottom=compact?y+height-5:y+height-51;
-        if(hitX<x||hitX>x+width||hitY<contentTop||hitY>contentBottom)return false;
+        int contentTop=y+HEADER_HEIGHT+2;
+        int contentBottom=y+BASE_HEIGHT-51;
+        if(hitX<x||hitX>x+BASE_WIDTH||hitY<contentTop||hitY>contentBottom)return false;
 
-        updateCache(MinecraftClient.getInstance().textRenderer,compact?width-16:width-22);
+        updateCache(MinecraftClient.getInstance().textRenderer,BASE_WIDTH-22);
         scrollOffset+=amount>0?3:-3;
-        int visible=Math.max(1,(contentBottom-contentTop)/(compact?9:11));
+        int visible=Math.max(1,(contentBottom-contentTop)/11);
         scrollOffset=Math.max(0,Math.min(scrollOffset,Math.max(0,CACHED_LINES.size()-visible)));
         return true;
     }
@@ -382,17 +388,19 @@ public final class AiLogOverlay {
     }
 
     private static void ensureBounds(int screenWidth,int screenHeight){
-        int maxWidth=Math.max(120,screenWidth/2);
-        int maxHeight=Math.max(70,Math.min(Math.max(70,screenHeight-8),screenHeight*3/4));
-        int minWidth=Math.min(240,maxWidth);
-        int minHeight=Math.min(140,maxHeight);
-        width=Math.max(minWidth,Math.min(width,maxWidth));
-        height=Math.max(minHeight,Math.min(height,maxHeight));
+        float availableWidth=Math.max(1,screenWidth-8)/(float)BASE_WIDTH;
+        float availableHeight=Math.max(1,screenHeight-8)/(float)BASE_HEIGHT;
+        float maxScale=Math.max(MIN_PANEL_SCALE,
+                Math.min(MAX_PANEL_SCALE,Math.min(availableWidth,availableHeight)));
+        float scale=Math.max(MIN_PANEL_SCALE,Math.min(panelScale(),maxScale));
+
+        width=Math.round(BASE_WIDTH*scale);
+        height=Math.round(BASE_HEIGHT*scale);
 
         if(x<0)x=Math.max(4,screenWidth-width-18);
-        if(y<0)y=Math.max(4,screenHeight-height-60);
+        if(y<0)y=Math.max(4,screenHeight-visiblePanelHeight()-60);
         x=Math.max(4,Math.min(x,Math.max(4,screenWidth-width-4)));
-        y=Math.max(4,Math.min(y,Math.max(4,screenHeight-(collapsed?headerHeight():height)-4)));
+        y=Math.max(4,Math.min(y,Math.max(4,screenHeight-visiblePanelHeight()-4)));
     }
 
     private static void updateCache(TextRenderer renderer,int maxWidth){
@@ -418,8 +426,7 @@ public final class AiLogOverlay {
         cachedRevision=revision;
         cachedWidth=maxWidth;
         cachedFilter=filter;
-        boolean compact=compact();
-        int visible=compact?Math.max(1,(height-headerHeight()-7)/9):Math.max(1,(height-86)/11);
+        int visible=Math.max(1,(BASE_HEIGHT-86)/11);
         scrollOffset=Math.max(0,Math.min(scrollOffset,Math.max(0,CACHED_LINES.size()-visible)));
     }
 
@@ -441,17 +448,20 @@ public final class AiLogOverlay {
 
     private static void drawStats(DrawContext context,TextRenderer renderer,int statsY,int panelWidth){
         int cardWidth=(panelWidth-32)/3;
-        drawStat(context,renderer,0,statsY,cardWidth,Items.EMERALD,AiLogClient.getTotalCount(),0xFF8DDEA4);
-        drawStat(context,renderer,1,statsY,cardWidth,Items.GLOWSTONE_DUST,AiLogClient.getWarningCount(),0xFFFFD477);
-        drawStat(context,renderer,2,statsY,cardWidth,Items.REDSTONE,AiLogClient.getErrorCount(),0xFFFF7777);
+        drawStat(context,renderer,0,statsY,cardWidth,"TOTAL",AiLogClient.getTotalCount(),0xFF8DDEA4);
+        drawStat(context,renderer,1,statsY,cardWidth,"WARN",AiLogClient.getWarningCount(),0xFFFFD477);
+        drawStat(context,renderer,2,statsY,cardWidth,"ERROR",AiLogClient.getErrorCount(),0xFFFF7777);
     }
 
     private static void drawStat(DrawContext context,TextRenderer renderer,int index,int statsY,int cardWidth,
-                                 net.minecraft.item.Item item,long count,int color){
+                                 String label,long count,int color){
         int cardX=x+8+index*(cardWidth+8);
         rounded(context,cardX,statsY,cardX+cardWidth,statsY+19,0xFF515C68);
-        context.drawItem(new ItemStack(item),cardX+3,statsY+2);
-        context.drawTextWithShadow(renderer,Text.literal(formatCount(count)),cardX+23,statsY+6,color);
+        context.drawTextWithShadow(renderer,Text.literal(label),cardX+6,statsY+6,0xFFD8DEE6);
+        String value=formatCount(count);
+        int valueWidth=renderer.getWidth(value);
+        context.drawTextWithShadow(renderer,Text.literal(value),
+                cardX+cardWidth-valueWidth-6,statsY+6,color);
     }
 
     private static void drawTabs(DrawContext context,TextRenderer renderer,int tabY,int panelWidth){
