@@ -1,8 +1,8 @@
-# Minecraft AI Agent 0.3.14
+# Minecraft AI Agent 0.3.15
 
 Minecraft 1.20.1 • Fabric • Java 17
 
-A server-enabled Minecraft AI agent. The client provides the AI chat panel and model connection. The server executes world tools, checks operator permissions, controls entities and streams the server's Log4j events to the client log window.
+A server-enabled Minecraft AI agent. The client provides the AI chat panel and model connection. The server executes world tools, checks operator permissions, controls entities and retains a bounded in-memory Log4j history. Logs are sent to the client only while the Logs HUD is open or when an AI diagnostic search explicitly requests a snapshot.
 
 ## Open the panel
 
@@ -17,11 +17,11 @@ The log window has three filters:
 
 Log text is re-wrapped when the window is resized. The panel keeps the latest 5,000 entries in memory for display and also saves the complete collected panel feed on the client in `logs/minecraft-ai-agent/latest.log`. The archive rotates through `latest.log.1` and `latest.log.2`; each file is capped at 4 MiB. The COPY button in the log window copies the full saved archive, oldest first, including all collected server, custom and error entries. The three text counters show total, warning and error events received since joining the current world. INFO lines are green, WARN lines yellow, ERROR/FATAL lines red, DEBUG lines blue and TRACE lines muted. The counters use text only, so they scale down cleanly with the rest of the panel.
 
-The dedicated-server log stream requires operator permission level 2. The server sends logs only to subscribed operator clients. API keys and common token patterns are redacted before transmission. The stream starts on join, so the counters include events from the moment the client connects; older server startup events are not replayed.
+Reading server logs requires operator permission level 2. The server retains up to 4,096 recent Log4j events in a bounded in-memory ring buffer, with secrets redacted and oversized entries truncated. This collection continues locally even when no client is subscribed; it does not send log packets while the Logs HUD is closed. Opening Logs HUD requests up to 500 recent entries and starts the live stream. Closing the HUD stops that stream. Older events that have already fallen out of the bounded server buffer cannot be recovered.
 
-The server log bridge sends small, size-checked batches and truncates oversized individual entries before queuing them. A malformed or unexpectedly large log batch is discarded safely instead of allowing packet encoding to crash the integrated or dedicated server.
+The AI's search_agent_logs tool explicitly requests a one-time snapshot of up to 300 recent server entries before searching the retained client archive. This works even with Logs HUD closed and does not enable live streaming. Server history collection and packet delivery are independent. Live delivery uses small, size-checked batches; failed or malformed transmissions are discarded safely, and appender/transport errors are contained so they cannot escape the server tick or crash the integrated or dedicated server.
 
-The log window reads the live server Log4j stream, not the server filesystem's `logs/latest.log` file directly. On a dedicated server it receives events from that server process. On an integrated singleplayer server the Log4j root is shared by the client and integrated server process. The local archive contains only entries that reached the Agent panel; it does not replace Minecraft's complete vanilla `latest.log` or automatically capture every third-party client mod logger. Common API-key and token patterns are redacted before entries are stored.
+The log window reads the Agent's retained Log4j history, not the server filesystem's `logs/latest.log` file directly. On a dedicated server the history belongs to that server process. On an integrated singleplayer server the Log4j root is shared by the client and integrated server process, so the in-memory history can include root logger events from both logical sides. The client archive contains only entries received while the HUD was open or explicitly requested by an AI diagnostic search; it does not replace Minecraft's complete vanilla `latest.log` or automatically capture every third-party client mod logger. Common API-key and token patterns are redacted before entries are stored.
 
 You can also address the agent from the normal game chat:
 
@@ -33,7 +33,7 @@ The agent answers in chat using a server-generated message label. Such a message
 ## AI Agent access to Logs HUD and diagnostics (0.3.12)
 
 The AI Agent can query the same retained archive used by the Logs HUD through two client-local tools:
-- \`search_agent_logs\` searches the retained panel archive (\`latest.log\`, \`latest.log.1\`, and \`latest.log.2\`) newest-first. It supports a text fragment, level filter, CUSTOM-only filtering, a bounded result count and offset pagination to continue into older matches. The archive retains up to three 4 MiB files. The agent receives matching lines rather than a blind dump of the entire archive.
+- \`search_agent_logs\` first requests up to 300 recent entries from the server's in-memory ring buffer, even when Logs HUD is closed. The received lines are merged into the client archive with sequence-ID de-duplication, then the tool searches \`latest.log\`, \`latest.log.1\` and \`latest.log.2\` newest-first. It supports a text fragment, level filter, CUSTOM-only filtering, a bounded result count and offset pagination to continue through older matches. The archive retains up to three 4 MiB files. The agent receives matching lines rather than a blind dump of the entire archive. The tool result includes \`server_snapshot.ok\` so the agent can distinguish a fresh server snapshot from older client-only records.
 - \`get_agent_diagnostics\` returns current FPS (session average and maximum too), ping, server TPS and tick interval, GPU/CPU/RAM, resolution, log-stream state and warning/error counters. It also returns all recent chart samples (FPS/TPS/GPU/CPU) in oldest-to-newest order, with a 500 ms sample interval.
 
 The tool selector enables the relevant tools for log, error, crash, performance, lag, FPS/TPS, GPU/CPU/RAM and broad server-diagnosis questions. For troubleshooting the agent can correlate graph samples with log timestamps. Performance sampling continues even when the Diagnostics HUD switch is off, so telemetry remains available to the agent without requiring the graph view to be open.
