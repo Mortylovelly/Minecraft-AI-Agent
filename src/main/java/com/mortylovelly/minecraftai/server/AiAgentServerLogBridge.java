@@ -21,29 +21,35 @@ import org.apache.logging.log4j.core.config.Property;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class AiAgentServerLogBridge {
     public static final Identifier LOG_BATCH = new Identifier("minecraft_ai_agent", "log_batch");
     public static final Identifier LOG_STATUS = new Identifier("minecraft_ai_agent", "log_status");
+    public static final Identifier LOG_SNAPSHOT_DONE = new Identifier("minecraft_ai_agent", "log_snapshot_done");
 
     private static final String APPENDER_NAME = "MinecraftAiAgentServerLogBridge";
-    private static final int MAX_QUEUE = 4096;
-    // Small batches leave ample room for JSON escaping and network framing.
+    private static final int MAX_HISTORY_LINES = 4096;
+    private static final int HUD_SNAPSHOT_LINES = 500;
+    private static final int DIAGNOSTIC_SNAPSHOT_LINES = 300;
     private static final int BATCH_SIZE = 4;
     private static final int MAX_PACKET_CHARS = 24000;
     private static final int MAX_LOG_MESSAGE_CHARS = 1600;
     private static final int MAX_LOGGER_CHARS = 96;
+    private static final int MAX_BATCHES_PER_TICK = 8;
 
-    private static final Set<UUID> SUBSCRIBERS = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private static final ConcurrentLinkedDeque<LogLine> QUEUE = new ConcurrentLinkedDeque<>();
-    private static final AtomicInteger QUEUE_SIZE = new AtomicInteger();
+    // Collection is independent from transport: the appender always updates this
+    // bounded history; the subscriber map controls only live network delivery.
+    private static final Object HISTORY_LOCK = new Object();
+    private static final ArrayDeque<LogLine> HISTORY = new ArrayDeque<>();
+    private static final Map<UUID, Long> SUBSCRIBERS = new ConcurrentHashMap<>();
 
+    private static long nextSequence;
     private static volatile MinecraftServer server;
     private static volatile LoggerContext loggerContext;
     private static volatile LoggerConfig rootLoggerConfig;
@@ -62,19 +68,57 @@ public final class AiAgentServerLogBridge {
             sendStatus(player, "Для просмотра серверных логов нужны права OP 2.", false);
             return;
         }
-        SUBSCRIBERS.add(player.getUuid());
-        sendStatus(player, "Подключено к потоку серверных логов.", true);
+
+        synchronized (HISTORY_LOCK) {
+            long latest = nextSequence;
+            LogLine oldestLine = HISTORY.peekFirst();
+            long oldest = oldestLine == null ? latest + 1L : oldestLine.sequence();
+            long firstToSend = Math.max(oldest, latest - HUD_SNAPSHOT_LINES + 1L);
+            SUBSCRIBERS.put(player.getUuid(), firstToSend - 1L);
+        }
+        sendStatus(player, "Поток серверных логов включён.", true);
     }
 
     public static void unsubscribe(UUID playerId) {
         SUBSCRIBERS.remove(playerId);
     }
 
+    // One-time bounded transfer for an AI diagnostic request; does not subscribe.
+    public static void sendRecentSnapshot(ServerPlayerEntity player, String requestId) {
+        if (requestId == null || requestId.isBlank()) return;
+        if (!player.hasPermissionLevel(2)) {
+            sendSnapshotDone(player, requestId, false, 0, "Для чтения серверных логов нужны права OP 2.");
+            return;
+        }
+
+        List<LogLine> snapshot = snapshotTail(DIAGNOSTIC_SNAPSHOT_LINES);
+        int sent = 0;
+        boolean success = true;
+        for (int start = 0; start < snapshot.size(); start += BATCH_SIZE) {
+            int end = Math.min(snapshot.size(), start + BATCH_SIZE);
+            if (!sendBatch(player, snapshot.subList(start, end))) {
+                success = false;
+                break;
+            }
+            sent += end - start;
+        }
+        String message = success
+                ? "Получено свежих серверных записей: " + sent + "."
+                : "Передача снимка логов прервалась после " + sent + " записей.";
+        sendSnapshotDone(player, requestId, success, sent, message);
+    }
+
+    public static void sendRecentSnapshotDenied(ServerPlayerEntity player, String requestId, String reason) {
+        sendSnapshotDone(player, requestId, false, 0, reason);
+    }
+
     private static void attach(MinecraftServer currentServer) {
         detach(currentServer);
         server = currentServer;
-        QUEUE.clear();
-        QUEUE_SIZE.set(0);
+        synchronized (HISTORY_LOCK) {
+            HISTORY.clear();
+            nextSequence = 0L;
+        }
 
         try {
             LoggerContext context = (LoggerContext) LogManager.getContext(false);
@@ -89,7 +133,8 @@ public final class AiAgentServerLogBridge {
             rootLoggerConfig = root;
             appender = bridgeAppender;
         } catch (Throwable throwable) {
-            System.err.println("[Minecraft AI Agent] Could not attach server log appender: " + throwable.getMessage());
+            System.err.println("[Minecraft AI Agent] Could not attach server log appender: "
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
         }
     }
 
@@ -105,7 +150,8 @@ public final class AiAgentServerLogBridge {
                 context.updateLoggers();
                 activeAppender.stop();
             } catch (Throwable throwable) {
-                System.err.println("[Minecraft AI Agent] Could not detach server log appender: " + throwable.getMessage());
+                System.err.println("[Minecraft AI Agent] Could not detach server log appender: "
+                        + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
             }
         }
 
@@ -114,105 +160,167 @@ public final class AiAgentServerLogBridge {
         rootLoggerConfig = null;
         server = null;
         SUBSCRIBERS.clear();
-        QUEUE.clear();
-        QUEUE_SIZE.set(0);
+        synchronized (HISTORY_LOCK) {
+            HISTORY.clear();
+            nextSequence = 0L;
+        }
     }
 
     private static void flush(MinecraftServer currentServer) {
-        if (SUBSCRIBERS.isEmpty()) {
-            if (!QUEUE.isEmpty()) {
-                QUEUE.clear();
-                QUEUE_SIZE.set(0);
-            }
-            return;
-        }
-
-        for (int batchIndex = 0; batchIndex < 3; batchIndex++) {
-            JsonArray entries = new JsonArray();
-            int removed = 0;
-            while (removed < BATCH_SIZE) {
-                LogLine line = QUEUE.pollFirst();
-                if (line == null) break;
-                QUEUE_SIZE.decrementAndGet();
-                entries.add(line.toJson());
-                removed++;
-            }
-            if (entries.isEmpty()) break;
-
-            JsonObject packetJson = new JsonObject();
-            packetJson.add("lines", entries);
-            String encodedBatch = packetJson.toString();
-
-            // Never let an oversized diagnostic packet take down the integrated server.
-            // If unusual control characters expand during JSON escaping, discard only
-            // the newest entries until the encoded packet is safely below the limit.
-            while (encodedBatch.length() > MAX_PACKET_CHARS && entries.size() > 0) {
-                entries.remove(entries.size() - 1);
-                packetJson.add("lines", entries);
-                encodedBatch = packetJson.toString();
-            }
-            if (entries.isEmpty()) {
-                System.err.println("[Minecraft AI Agent] Dropped an oversized server-log batch.");
-                continue;
-            }
-
-            List<UUID> stale = new ArrayList<>();
-            for (UUID id : SUBSCRIBERS) {
-                ServerPlayerEntity player = currentServer.getPlayerManager().getPlayer(id);
+        if (SUBSCRIBERS.isEmpty()) return;
+        try {
+            for (Map.Entry<UUID, Long> subscription : SUBSCRIBERS.entrySet()) {
+                UUID playerId = subscription.getKey();
+                long previousSequence = subscription.getValue();
+                ServerPlayerEntity player = currentServer.getPlayerManager().getPlayer(playerId);
                 if (player == null || player.isDisconnected() || !player.hasPermissionLevel(2)) {
-                    stale.add(id);
+                    SUBSCRIBERS.remove(playerId);
                     continue;
                 }
 
-                try {
-                    PacketByteBuf buffer = PacketByteBufs.create();
-                    buffer.writeString(encodedBatch, MAX_PACKET_CHARS);
-                    ServerPlayNetworking.send(player, LOG_BATCH, buffer);
-                } catch (RuntimeException exception) {
-                    // Logging transport is optional; network encoding failures must not
-                    // escape the server tick and crash the world being diagnosed.
-                    System.err.println("[Minecraft AI Agent] Could not send server-log batch: "
-                            + exception.getClass().getSimpleName() + ": " + exception.getMessage());
-                    stale.add(id);
+                HistorySlice slice = historyAfter(previousSequence, BATCH_SIZE * MAX_BATCHES_PER_TICK);
+                long sentThrough = slice.cursor();
+                boolean failed = false;
+                List<LogLine> pending = slice.lines();
+                for (int start = 0; start < pending.size(); start += BATCH_SIZE) {
+                    int end = Math.min(pending.size(), start + BATCH_SIZE);
+                    if (!sendBatch(player, pending.subList(start, end))) {
+                        failed = true;
+                        break;
+                    }
+                    sentThrough = pending.get(end - 1).sequence();
+                }
+
+                if (failed) {
+                    SUBSCRIBERS.remove(playerId);
+                    sendStatus(player, "Поток логов остановлен: ошибка передачи пакета.", false);
+                } else {
+                    SUBSCRIBERS.replace(playerId, previousSequence, sentThrough);
                 }
             }
-            stale.forEach(SUBSCRIBERS::remove);
+        } catch (Throwable throwable) {
+            // Never allow optional diagnostic transport to escape END_SERVER_TICK.
+            System.err.println("[Minecraft AI Agent] Log stream tick failed safely: "
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+        }
+    }
+
+    private static HistorySlice historyAfter(long sequence, int maxLines) {
+        synchronized (HISTORY_LOCK) {
+            long cursor = sequence;
+            LogLine oldestLine = HISTORY.peekFirst();
+            if (oldestLine != null && oldestLine.sequence() > cursor + 1L) {
+                cursor = oldestLine.sequence() - 1L;
+            }
+
+            List<LogLine> result = new ArrayList<>(Math.min(maxLines, HISTORY.size()));
+            for (LogLine line : HISTORY) {
+                if (line.sequence() <= cursor) continue;
+                result.add(line);
+                if (result.size() >= maxLines) break;
+            }
+            return new HistorySlice(cursor, result);
+        }
+    }
+
+    private static List<LogLine> snapshotTail(int limit) {
+        synchronized (HISTORY_LOCK) {
+            List<LogLine> result = new ArrayList<>(Math.min(limit, HISTORY.size()));
+            int skip = Math.max(0, HISTORY.size() - limit);
+            int index = 0;
+            for (LogLine line : HISTORY) {
+                if (index++ < skip) continue;
+                result.add(line);
+            }
+            return result;
+        }
+    }
+
+    private static boolean sendBatch(ServerPlayerEntity player, List<LogLine> lines) {
+        if (lines == null || lines.isEmpty()) return true;
+        JsonArray entries = new JsonArray();
+        for (LogLine line : lines) entries.add(line.toJson());
+        JsonObject packetJson = new JsonObject();
+        packetJson.add("lines", entries);
+        String encodedBatch = packetJson.toString();
+
+        while (encodedBatch.length() > MAX_PACKET_CHARS && entries.size() > 1) {
+            entries.remove(entries.size() - 1);
+            packetJson.add("lines", entries);
+            encodedBatch = packetJson.toString();
+        }
+        if (encodedBatch.length() > MAX_PACKET_CHARS || entries.isEmpty()) {
+            System.err.println("[Minecraft AI Agent] Dropped an oversized server-log batch.");
+            return false;
+        }
+
+        try {
+            PacketByteBuf buffer = PacketByteBufs.create();
+            buffer.writeString(encodedBatch, MAX_PACKET_CHARS);
+            ServerPlayNetworking.send(player, LOG_BATCH, buffer);
+            return true;
+        } catch (RuntimeException exception) {
+            System.err.println("[Minecraft AI Agent] Could not send server-log batch: "
+                    + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+            return false;
         }
     }
 
     private static void sendStatus(ServerPlayerEntity player, String status, boolean active) {
-        PacketByteBuf buffer = PacketByteBufs.create();
-        buffer.writeString(status, 512);
-        buffer.writeBoolean(active);
-        ServerPlayNetworking.send(player, LOG_STATUS, buffer);
+        try {
+            PacketByteBuf buffer = PacketByteBufs.create();
+            buffer.writeString(status, 512);
+            buffer.writeBoolean(active);
+            ServerPlayNetworking.send(player, LOG_STATUS, buffer);
+        } catch (RuntimeException exception) {
+            System.err.println("[Minecraft AI Agent] Could not send log status: "
+                    + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+        }
+    }
+
+    private static void sendSnapshotDone(ServerPlayerEntity player, String requestId,
+                                         boolean success, int lineCount, String message) {
+        try {
+            PacketByteBuf buffer = PacketByteBufs.create();
+            buffer.writeString(requestId, 64);
+            buffer.writeBoolean(success);
+            buffer.writeVarInt(lineCount);
+            buffer.writeString(message == null ? "" : message, 512);
+            ServerPlayNetworking.send(player, LOG_SNAPSHOT_DONE, buffer);
+        } catch (RuntimeException exception) {
+            System.err.println("[Minecraft AI Agent] Could not finish log snapshot response: "
+                    + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+        }
     }
 
     private static void enqueue(LogEvent event) {
-        if (SUBSCRIBERS.isEmpty() || event == null) return;
+        if (event == null) return;
+        try {
+            String level = event.getLevel() == null ? "INFO" : event.getLevel().name();
+            String logger = event.getLoggerName() == null ? "Minecraft" : event.getLoggerName();
+            if (logger.length() > MAX_LOGGER_CHARS) logger = logger.substring(0, MAX_LOGGER_CHARS);
+            String message = event.getMessage() == null ? "" : event.getMessage().getFormattedMessage();
 
-        String level = event.getLevel() == null ? "INFO" : event.getLevel().name();
-        String logger = event.getLoggerName() == null ? "Minecraft" : event.getLoggerName();
-        if (logger.length() > MAX_LOGGER_CHARS) {
-            logger = logger.substring(0, MAX_LOGGER_CHARS);
-        }
-        String message = event.getMessage() == null ? "" : event.getMessage().getFormattedMessage();
+            if (event.getThrown() != null) {
+                StringWriter writer = new StringWriter();
+                event.getThrown().printStackTrace(new PrintWriter(writer));
+                message += "\n" + writer;
+            }
 
-        if (event.getThrown() != null) {
-            StringWriter writer = new StringWriter();
-            event.getThrown().printStackTrace(new PrintWriter(writer));
-            message += "\n" + writer;
-        }
+            message = redactSecrets(message);
+            if (message.length() > MAX_LOG_MESSAGE_CHARS) {
+                message = message.substring(0, MAX_LOG_MESSAGE_CHARS) + " …[truncated]";
+            }
+            boolean custom = isProjectLog(logger, message);
 
-        message = redactSecrets(message);
-        if (message.length() > MAX_LOG_MESSAGE_CHARS) {
-            message = message.substring(0, MAX_LOG_MESSAGE_CHARS) + " …[truncated]";
-        }
-        boolean custom = isProjectLog(logger, message);
-        LogLine line = new LogLine(event.getTimeMillis(), level, logger, message, custom);
-
-        QUEUE.addLast(line);
-        if (QUEUE_SIZE.incrementAndGet() > MAX_QUEUE) {
-            if (QUEUE.pollFirst() != null) QUEUE_SIZE.decrementAndGet();
+            synchronized (HISTORY_LOCK) {
+                HISTORY.addLast(new LogLine(++nextSequence, event.getTimeMillis(), level, logger, message, custom));
+                while (HISTORY.size() > MAX_HISTORY_LINES) HISTORY.removeFirst();
+            }
+        } catch (Throwable throwable) {
+            // Appender failures must never leak back into Log4j callers.
+            System.err.println("[Minecraft AI Agent] Could not retain a log event safely: "
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
         }
     }
 
@@ -224,8 +332,8 @@ public final class AiAgentServerLogBridge {
                 || normalizedMessage.contains("[minecraft ai agent]")
                 || normalizedMessage.contains("[fauna]")
                 || normalizedMessage.contains("[minecartplus]")
-                || normalizedMessage.contains("[unique-relics]")
                 || normalizedMessage.contains("[uniquerelics]")
+                || normalizedMessage.contains("[unique-relics]")
                 || normalizedMessage.contains("[skylimitless]")
                 || normalizedMessage.contains("[seasonaldaycycle]")
                 || normalizedMessage.contains("[vitalcraft]")
@@ -241,9 +349,13 @@ public final class AiAgentServerLogBridge {
                 .replaceAll("\\bAIza[0-9A-Za-z_-]{20,}\\b", "[REDACTED_API_KEY]");
     }
 
-    private record LogLine(long timestamp, String level, String logger, String message, boolean custom) {
+    private record HistorySlice(long cursor, List<LogLine> lines) {}
+
+    private record LogLine(long sequence, long timestamp, String level, String logger,
+                           String message, boolean custom) {
         private JsonObject toJson() {
             JsonObject result = new JsonObject();
+            result.addProperty("sequence", sequence);
             result.addProperty("timestamp", timestamp);
             result.addProperty("level", level);
             result.addProperty("logger", logger);
