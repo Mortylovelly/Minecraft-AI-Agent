@@ -91,21 +91,30 @@ public final class AiAgentServerLogBridge {
             return;
         }
 
-        List<LogLine> snapshot = snapshotTail(DIAGNOSTIC_SNAPSHOT_LINES);
         int sent = 0;
-        boolean success = true;
-        for (int start = 0; start < snapshot.size(); start += BATCH_SIZE) {
-            int end = Math.min(snapshot.size(), start + BATCH_SIZE);
-            if (!sendBatch(player, snapshot.subList(start, end))) {
-                success = false;
-                break;
+        try {
+            List<LogLine> snapshot = snapshotTail(DIAGNOSTIC_SNAPSHOT_LINES);
+            boolean success = true;
+            for (int start = 0; start < snapshot.size(); start += BATCH_SIZE) {
+                int end = Math.min(snapshot.size(), start + BATCH_SIZE);
+                if (!sendBatch(player, snapshot.subList(start, end))) {
+                    success = false;
+                    break;
+                }
+                sent += end - start;
             }
-            sent += end - start;
+            String message = success
+                    ? "Получено свежих серверных записей: " + sent + "."
+                    : "Передача снимка логов прервалась после " + sent + " записей.";
+            sendSnapshotDone(player, requestId, success, sent, message);
+        } catch (Throwable throwable) {
+            // A one-shot diagnostic request is also executed on the server thread.
+            // Contain every transport failure here so it cannot abort that tick.
+            System.err.println("[Minecraft AI Agent] Server-log snapshot failed safely: "
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            sendSnapshotDone(player, requestId, false, sent,
+                    "Передача снимка серверных логов завершилась ошибкой."); 
         }
-        String message = success
-                ? "Получено свежих серверных записей: " + sent + "."
-                : "Передача снимка логов прервалась после " + sent + " записей.";
-        sendSnapshotDone(player, requestId, success, sent, message);
     }
 
     public static void sendRecentSnapshotDenied(ServerPlayerEntity player, String requestId, String reason) {
@@ -256,9 +265,9 @@ public final class AiAgentServerLogBridge {
             buffer.writeString(encodedBatch, MAX_PACKET_CHARS);
             ServerPlayNetworking.send(player, LOG_BATCH, buffer);
             return true;
-        } catch (RuntimeException exception) {
+        } catch (Throwable throwable) {
             System.err.println("[Minecraft AI Agent] Could not send server-log batch: "
-                    + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
             return false;
         }
     }
@@ -269,9 +278,9 @@ public final class AiAgentServerLogBridge {
             buffer.writeString(status, 512);
             buffer.writeBoolean(active);
             ServerPlayNetworking.send(player, LOG_STATUS, buffer);
-        } catch (RuntimeException exception) {
+        } catch (Throwable throwable) {
             System.err.println("[Minecraft AI Agent] Could not send log status: "
-                    + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
         }
     }
 
@@ -284,9 +293,9 @@ public final class AiAgentServerLogBridge {
             buffer.writeVarInt(lineCount);
             buffer.writeString(message == null ? "" : message, 512);
             ServerPlayNetworking.send(player, LOG_SNAPSHOT_DONE, buffer);
-        } catch (RuntimeException exception) {
+        } catch (Throwable throwable) {
             System.err.println("[Minecraft AI Agent] Could not finish log snapshot response: "
-                    + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
         }
     }
 
