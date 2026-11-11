@@ -244,13 +244,10 @@ public final class AiAgentServerLogBridge {
         packetJson.add("lines", entries);
         String encodedBatch = packetJson.toString();
 
-        while (encodedBatch.length() > MAX_PACKET_CHARS && entries.size() > 1) {
-            entries.remove(entries.size() - 1);
-            packetJson.add("lines", entries);
-            encodedBatch = packetJson.toString();
-        }
         if (encodedBatch.length() > MAX_PACKET_CHARS || entries.isEmpty()) {
-            System.err.println("[Minecraft AI Agent] Dropped an oversized server-log batch.");
+            // Do not partially send a batch: the caller advances its cursor only
+            // after every requested line in the batch has been transmitted.
+            System.err.println("[Minecraft AI Agent] Rejected an oversized server-log batch.");
             return false;
         }
 
