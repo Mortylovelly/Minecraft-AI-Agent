@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
@@ -21,6 +22,8 @@ public final class AiLogClient {
     private static final int MAX_LINES = 5000;
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final ArrayDeque<LogLine> LINES = new ArrayDeque<>(MAX_LINES);
+    private static final LinkedHashSet<Long> REMOTE_SEQUENCES = new LinkedHashSet<>();
+    private static final int MAX_REMOTE_SEQUENCE_CACHE = 8192;
 
     private static long totalCount;
     private static long warningCount;
@@ -54,16 +57,18 @@ public final class AiLogClient {
 
     public static synchronized void resetForWorldJoin() {
         LINES.clear();
+        REMOTE_SEQUENCES.clear();
         totalCount = 0;
         warningCount = 0;
         errorCount = 0;
         revision++;
         connected = false;
-        connectionStatus = "Запрашиваю доступ к логам сервера...";
+        connectionStatus = "Поток логов выключен. Открой Logs HUD для просмотра.";
     }
 
     public static synchronized void onDisconnect() {
         LINES.clear();
+        REMOTE_SEQUENCES.clear();
         totalCount = 0;
         warningCount = 0;
         errorCount = 0;
@@ -121,6 +126,13 @@ public final class AiLogClient {
             for (JsonElement element : entries) {
                 if (!element.isJsonObject()) continue;
                 JsonObject item = element.getAsJsonObject();
+                long sequence = item.has("sequence") ? item.get("sequence").getAsLong() : 0L;
+                if (sequence > 0L) {
+                    if (!REMOTE_SEQUENCES.add(sequence)) continue;
+                    while (REMOTE_SEQUENCES.size() > MAX_REMOTE_SEQUENCE_CACHE) {
+                        REMOTE_SEQUENCES.remove(REMOTE_SEQUENCES.iterator().next());
+                    }
+                }
                 long timestamp = item.has("timestamp") ? item.get("timestamp").getAsLong() : System.currentTimeMillis();
                 String level = string(item, "level", "INFO").toUpperCase(Locale.ROOT);
                 String logger = string(item, "logger", "Minecraft");
