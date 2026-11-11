@@ -52,7 +52,9 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             AiLogClient.resetForWorldJoin();
             AiDiagnostics.onWorldJoin();
-            AiAgentNetwork.subscribeToLogs();
+            // Preserve an already-open HUD across a world transition, but never
+            // start live streaming automatically while the Logs HUD is closed.
+            if (AiLogOverlay.isOpen()) AiAgentNetwork.subscribeToLogs();
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             AiAgentNetwork.onDisconnect();
