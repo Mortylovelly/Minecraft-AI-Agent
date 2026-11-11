@@ -50,7 +50,9 @@ public final class AiLogOverlay {
             settingsOpen=false;
             scrollOffset=0;
             cachedRevision=-1L;
+            AiAgentNetwork.subscribeToLogs();
         }else{
+            AiAgentNetwork.unsubscribeFromLogs();
             AiUiSound.playClose();
         }
     }
