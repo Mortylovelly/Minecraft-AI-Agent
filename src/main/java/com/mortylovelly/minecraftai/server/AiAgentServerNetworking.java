@@ -17,6 +17,7 @@ public final class AiAgentServerNetworking {
     public static final Identifier TOOL_REQUEST = new Identifier("minecraft_ai_agent", "tool_request");
     public static final Identifier TOOL_RESPONSE = new Identifier("minecraft_ai_agent", "tool_response");
     public static final Identifier LOG_SUBSCRIBE = new Identifier("minecraft_ai_agent", "log_subscribe");
+    public static final Identifier LOG_SNAPSHOT_REQUEST = new Identifier("minecraft_ai_agent", "log_snapshot_request");
 
     private static final Map<UUID, long[]> REQUEST_WINDOW = new HashMap<>();
 
@@ -73,8 +74,27 @@ public final class AiAgentServerNetworking {
             });
         });
 
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                AiAgentServerLogBridge.unsubscribe(handler.player.getUuid()));
+        ServerPlayNetworking.registerGlobalReceiver(LOG_SNAPSHOT_REQUEST, (server, player, handler, buffer, responseSender) -> {
+            final String requestId;
+            try {
+                requestId = buffer.readString(64);
+            } catch (RuntimeException exception) {
+                return;
+            }
+            server.execute(() -> {
+                if (requestId.isBlank() || !allowRequest(player.getUuid(), System.currentTimeMillis())) {
+                    AiAgentServerLogBridge.sendRecentSnapshotDenied(player, requestId,
+                            "Слишком много запросов к серверу. Подожди несколько секунд.");
+                    return;
+                }
+                AiAgentServerLogBridge.sendRecentSnapshot(player, requestId);
+            });
+        });
+
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            AiAgentServerLogBridge.unsubscribe(handler.player.getUuid());
+            REQUEST_WINDOW.remove(handler.player.getUuid());
+        });
     }
 
     private static boolean allowRequest(UUID playerId, long now) {
