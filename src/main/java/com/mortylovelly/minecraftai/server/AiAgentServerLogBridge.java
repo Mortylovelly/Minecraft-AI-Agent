@@ -34,7 +34,11 @@ public final class AiAgentServerLogBridge {
 
     private static final String APPENDER_NAME = "MinecraftAiAgentServerLogBridge";
     private static final int MAX_QUEUE = 4096;
-    private static final int BATCH_SIZE = 18;
+    // Small batches leave ample room for JSON escaping and network framing.
+    private static final int BATCH_SIZE = 4;
+    private static final int MAX_PACKET_CHARS = 24000;
+    private static final int MAX_LOG_MESSAGE_CHARS = 1600;
+    private static final int MAX_LOGGER_CHARS = 96;
 
     private static final Set<UUID> SUBSCRIBERS = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final ConcurrentLinkedDeque<LogLine> QUEUE = new ConcurrentLinkedDeque<>();
@@ -138,6 +142,20 @@ public final class AiAgentServerLogBridge {
             JsonObject packetJson = new JsonObject();
             packetJson.add("lines", entries);
             String encodedBatch = packetJson.toString();
+
+            // Never let an oversized diagnostic packet take down the integrated server.
+            // If unusual control characters expand during JSON escaping, discard only
+            // the newest entries until the encoded packet is safely below the limit.
+            while (encodedBatch.length() > MAX_PACKET_CHARS && entries.size() > 0) {
+                entries.remove(entries.size() - 1);
+                packetJson.add("lines", entries);
+                encodedBatch = packetJson.toString();
+            }
+            if (entries.isEmpty()) {
+                System.err.println("[Minecraft AI Agent] Dropped an oversized server-log batch.");
+                continue;
+            }
+
             List<UUID> stale = new ArrayList<>();
             for (UUID id : SUBSCRIBERS) {
                 ServerPlayerEntity player = currentServer.getPlayerManager().getPlayer(id);
@@ -145,9 +163,18 @@ public final class AiAgentServerLogBridge {
                     stale.add(id);
                     continue;
                 }
-                PacketByteBuf buffer = PacketByteBufs.create();
-                buffer.writeString(encodedBatch, 30000);
-                ServerPlayNetworking.send(player, LOG_BATCH, buffer);
+
+                try {
+                    PacketByteBuf buffer = PacketByteBufs.create();
+                    buffer.writeString(encodedBatch, MAX_PACKET_CHARS);
+                    ServerPlayNetworking.send(player, LOG_BATCH, buffer);
+                } catch (RuntimeException exception) {
+                    // Logging transport is optional; network encoding failures must not
+                    // escape the server tick and crash the world being diagnosed.
+                    System.err.println("[Minecraft AI Agent] Could not send server-log batch: "
+                            + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+                    stale.add(id);
+                }
             }
             stale.forEach(SUBSCRIBERS::remove);
         }
@@ -165,6 +192,9 @@ public final class AiAgentServerLogBridge {
 
         String level = event.getLevel() == null ? "INFO" : event.getLevel().name();
         String logger = event.getLoggerName() == null ? "Minecraft" : event.getLoggerName();
+        if (logger.length() > MAX_LOGGER_CHARS) {
+            logger = logger.substring(0, MAX_LOGGER_CHARS);
+        }
         String message = event.getMessage() == null ? "" : event.getMessage().getFormattedMessage();
 
         if (event.getThrown() != null) {
@@ -174,7 +204,9 @@ public final class AiAgentServerLogBridge {
         }
 
         message = redactSecrets(message);
-        if (message.length() > 1600) message = message.substring(0, 1600) + " …";
+        if (message.length() > MAX_LOG_MESSAGE_CHARS) {
+            message = message.substring(0, MAX_LOG_MESSAGE_CHARS) + " …[truncated]";
+        }
         boolean custom = isProjectLog(logger, message);
         LogLine line = new LogLine(event.getTimeMillis(), level, logger, message, custom);
 
