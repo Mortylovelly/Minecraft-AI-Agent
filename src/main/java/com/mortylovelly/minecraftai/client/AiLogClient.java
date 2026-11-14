@@ -16,10 +16,13 @@ import java.util.Locale;
 
 public final class AiLogClient {
     public static final int FILTER_ALL = 0;
+    // Kept for internal/diagnostic use; this is no longer a visible HUD tab.
     public static final int FILTER_CUSTOM = 1;
     public static final int FILTER_ERRORS = 2;
+    public static final int FILTER_WARNINGS = 3;
 
-    private static final int MAX_LINES = 5000;
+    // Only the in-memory HUD buffer is bounded. AiLogFile keeps its independent disk archive.
+    private static final int MAX_LINES = 500;
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final ArrayDeque<LogLine> LINES = new ArrayDeque<>(MAX_LINES);
     private static final LinkedHashSet<Long> REMOTE_SEQUENCES = new LinkedHashSet<>();
@@ -112,6 +115,7 @@ public final class AiLogClient {
         for (LogLine line : LINES) {
             if (filter == FILTER_CUSTOM && !line.custom()) continue;
             if (filter == FILTER_ERRORS && !line.isError()) continue;
+            if (filter == FILTER_WARNINGS && !line.isWarning()) continue;
             result.add(line);
         }
         return result;
@@ -150,17 +154,26 @@ public final class AiLogClient {
         AiLogFile.appendBatch(List.of(append(System.currentTimeMillis(), level, logger, message, true)));
     }
 
-    public static synchronized String exportAllLogs() {
-        String savedLogs = AiLogFile.readAll();
-        if (savedLogs != null && !savedLogs.isBlank()) return savedLogs;
-        StringBuilder fallback = new StringBuilder();
-        for (LogLine line : LINES) {
-            fallback.append('[').append(line.time()).append("] [")
-                    .append(line.level()).append("] [")
-                    .append(line.logger()).append("] ")
-                    .append(line.message()).append(System.lineSeparator());
+    /**
+     * Exports only the currently selected HUD category. The export is limited to the
+     * newest physical log lines shown by the bounded HUD buffer; the disk archive is untouched.
+     */
+    public static synchronized String exportFilteredLogs(int filter, int requestedMaxLines) {
+        int maxLines = Math.max(1, Math.min(MAX_LINES, requestedMaxLines));
+        ArrayDeque<String> tail = new ArrayDeque<>(maxLines);
+
+        for (LogLine line : snapshot(filter)) {
+            String[] messageLines = line.message().replace('\r', '\n').split("\n", -1);
+            for (int index = 0; index < messageLines.length; index++) {
+                String prefix = index == 0
+                        ? "[" + line.time() + "] [" + line.level() + "] [" + line.logger() + "] "
+                        : "    ";
+                tail.addLast(prefix + messageLines[index]);
+                while (tail.size() > maxLines) tail.removeFirst();
+            }
         }
-        return fallback.toString();
+
+        return String.join(System.lineSeparator(), tail);
     }
 
     private static LogLine append(long timestamp, String level, String logger, String message, boolean custom) {
