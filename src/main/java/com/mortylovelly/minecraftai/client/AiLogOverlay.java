@@ -409,7 +409,7 @@ public final class AiLogOverlay {
         List<AiLogClient.LogLine> lines=AiLogClient.snapshot(filter);
         for(AiLogClient.LogLine entry:lines){
             String prefix="["+entry.time()+"] ["+entry.level()+"] ["+entry.logger()+"] ";
-            String[] messageLines=entry.message().replace('\\r','\\n').split("\\n",-1);
+            String[] messageLines=entry.message().replace('\r','\n').split("\n",-1);
             for(int index=0;index<messageLines.length;index++){
                 addedLines+=appendWrapped(renderer,(index==0?prefix:"    ")+messageLines[index],
                         Math.max(24,maxWidth),entry.color());
