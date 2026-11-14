@@ -4,6 +4,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.fabricmc.loader.api.FabricLoader;
 
+import java.awt.Desktop;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -35,6 +37,26 @@ public final class AiLogFile {
     private static final Path LEGACY_IMPORT_MARKER = LOG_DIRECTORY.resolve(".legacy-imported");
 
     private AiLogFile() {}
+
+    /**
+     * Opens the mod's log archive directory in the operating system's file manager.
+     * This does not modify, truncate, or rotate any Minecraft log files.
+     */
+    public static boolean openDirectory() {
+        synchronized (LOCK) {
+            try {
+                Files.createDirectories(LOG_DIRECTORY);
+                if (!Desktop.isDesktopSupported()) return false;
+                Desktop desktop = Desktop.getDesktop();
+                if (!desktop.isSupported(Desktop.Action.OPEN)) return false;
+                desktop.open(LOG_DIRECTORY.toFile());
+                return true;
+            } catch (Exception exception) {
+                System.err.println("[Minecraft AI Agent] Could not open log directory: " + exception.getMessage());
+                return false;
+            }
+        }
+    }
 
     public static void initialize() {
         synchronized (LOCK) {
