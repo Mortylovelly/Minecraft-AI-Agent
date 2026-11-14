@@ -12,10 +12,12 @@ Click **Logs** in the AI panel to open the independent log HUD. The AI panel clo
 
 The log window has three filters:
 - **Logs** — all received server Log4j events.
-- **Custom logs** — events from Mortylovelly project namespaces and recognized project markers such as \`[Fix]\`.
-- **Errors** — ERROR and FATAL events from both the general and custom streams.
+- **Warns** — WARN and WARNING events.
+- **Errors** — ERROR and FATAL events, including events classified as custom internally.
 
-Log text is re-wrapped when the window is resized. The panel keeps the latest 5,000 entries in memory for display and also saves the complete collected panel feed on the client in `logs/minecraft-ai-agent/latest.log`. The archive rotates through `latest.log.1` and `latest.log.2`; each file is capped at 4 MiB. The COPY button in the log window copies the full saved archive, oldest first, including all collected server, custom and error entries. The three text counters show total, warning and error events received since joining the current world. INFO lines are green, WARN lines yellow, ERROR/FATAL lines red, DEBUG lines blue and TRACE lines muted. The counters use text only, so they scale down cleanly with the rest of the panel.
+Custom-log classification, collection and the CUSTOM-only diagnostic search remain available internally; the former Custom logs tab is no longer displayed in the HUD.
+
+Log text is re-wrapped when the window is resized. The HUD keeps only the newest 500 physical display lines in its in-memory buffer; as new lines arrive, the oldest visible lines are discarded from the HUD only. This limit does not delete, truncate or rotate the actual log archive. The complete collected feed is still saved on the client in `logs/minecraft-ai-agent/latest.log`. The archive rotates through `latest.log.1` and `latest.log.2`; each file is capped at 4 MiB. COPY exports only the currently selected Logs, Warns or Errors filter, up to the newest 500 lines, instead of copying the full archive. The folder icon in the header opens `logs/minecraft-ai-agent` in the operating system's file manager. The three text counters show total, warning and error events received since joining the current world. INFO lines are green, WARN lines yellow, ERROR/FATAL lines red, DEBUG lines blue and TRACE lines muted. The counters use text only, so they scale down cleanly with the rest of the panel.
 
 Reading server logs requires operator permission level 2. The server retains up to 4,096 recent Log4j events in a bounded in-memory ring buffer, with secrets redacted and oversized entries truncated. This collection continues locally even when no client is subscribed; it does not send log packets while the Logs HUD is closed. Opening Logs HUD requests up to 500 recent entries and starts the live stream. Closing the HUD stops that stream. Older events that have already fallen out of the bounded server buffer cannot be recovered.
 
