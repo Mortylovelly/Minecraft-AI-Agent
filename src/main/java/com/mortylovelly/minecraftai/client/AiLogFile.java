@@ -39,17 +39,18 @@ public final class AiLogFile {
     private AiLogFile() {}
 
     /**
-     * Opens the mod's log archive directory in the operating system's file manager.
+     * Opens Minecraft's main logs directory in the operating system's file manager.
      * This does not modify, truncate, or rotate any Minecraft log files.
      */
     public static boolean openDirectory() {
         synchronized (LOCK) {
             try {
-                Files.createDirectories(LOG_DIRECTORY);
+                Path minecraftLogsDirectory = FabricLoader.getInstance().getGameDir().resolve("logs");
+                Files.createDirectories(minecraftLogsDirectory);
                 if (!Desktop.isDesktopSupported()) return false;
                 Desktop desktop = Desktop.getDesktop();
                 if (!desktop.isSupported(Desktop.Action.OPEN)) return false;
-                desktop.open(LOG_DIRECTORY.toFile());
+                desktop.open(minecraftLogsDirectory.toFile());
                 return true;
             } catch (Exception exception) {
                 System.err.println("[Minecraft AI Agent] Could not open log directory: " + exception.getMessage());
