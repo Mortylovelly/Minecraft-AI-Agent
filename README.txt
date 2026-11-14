@@ -1,4 +1,4 @@
-# Minecraft AI Agent 0.3.17
+# Minecraft AI Agent 0.3.18
 
 Minecraft 1.20.1 • Fabric • Java 17
 
