@@ -14,6 +14,7 @@ import java.util.List;
 
 public final class AiLogOverlay {
     private static final int BASE_WIDTH=360, BASE_HEIGHT=210, DIAGNOSTICS_HEIGHT=164, HEADER_HEIGHT=29;
+    private static final int MAX_DISPLAY_LINES=500;
     private static final float MIN_PANEL_SCALE=0.25F, MAX_PANEL_SCALE=1.6F;
     private static boolean open, visible, settingsOpen, diagnosticsEnabled, dragging, resizing, pointerCaptured;
     private static int x=-1, y=-1, width=300, height=175;
@@ -180,12 +181,13 @@ public final class AiLogOverlay {
         boolean copied=System.currentTimeMillis()<copyNoticeUntil;
         String status=copied?copyNotice:AiLogClient.getConnectionStatus();
         int statusColor=copied||AiLogClient.isConnected()?0xFF91DDA5:0xFFFFD27A;
-        int statusMax=right-94-(x+112)-5;
+        int statusMax=right-116-(x+112)-5;
         if(statusMax>18){
             context.drawTextWithShadow(renderer,
                     Text.literal(renderer.trimToWidth(status,statusMax)),x+112,y+9,statusColor);
         }
 
+        folderButton(context,right-116,y+6,panelMouseX,panelMouseY);
         headerButton(context,renderer,right-94,y+6,39,"COPY",false,panelMouseX,panelMouseY);
         gearButton(context,right-50,y+6,panelMouseX,panelMouseY);
         headerButton(context,renderer,right-27,y+6,19,"×",true,panelMouseX,panelMouseY);
@@ -242,8 +244,13 @@ public final class AiLogOverlay {
         pointerCaptured=true;
 
         if(hitY<=y+HEADER_HEIGHT){
+            if(!settingsOpen&&hitX>=right-116&&hitX<right-97){
+                openLogFolder();
+                AiUiSound.playClick();
+                return true;
+            }
             if(!settingsOpen&&hitX>=right-94&&hitX<right-53){
-                copyAllLogs();
+                copyFilteredLogs();
                 AiUiSound.playClick();
                 return true;
             }
@@ -297,7 +304,9 @@ public final class AiLogOverlay {
         int tabY=y+BASE_HEIGHT-22;
         if(hitY>=tabY&&hitY<=y+BASE_HEIGHT-3){
             int tabWidth=(BASE_WIDTH-24)/3;
-            int selected=Math.max(0,Math.min(2,((int)hitX-(x+8))/Math.max(1,tabWidth)));
+            int selectedIndex=Math.max(0,Math.min(2,((int)hitX-(x+8))/Math.max(1,tabWidth)));
+            int[] tabFilters={AiLogClient.FILTER_ALL,AiLogClient.FILTER_WARNINGS,AiLogClient.FILTER_ERRORS};
+            int selected=tabFilters[selectedIndex];
             if(selected!=filter){
                 filter=selected;
                 scrollOffset=0;
@@ -357,12 +366,19 @@ public final class AiLogOverlay {
         return true;
     }
 
-    private static void copyAllLogs(){
+    private static void copyFilteredLogs(){
         MinecraftClient client=MinecraftClient.getInstance();
-        String logs=AiLogClient.exportAllLogs();
-        if(logs==null||logs.isBlank())logs="Логи Minecraft AI Agent пока пусты.";
+        String logs=AiLogClient.exportFilteredLogs(filter,MAX_DISPLAY_LINES);
+        if(logs==null||logs.isBlank())logs="В выбранной вкладке пока нет логов.";
         client.keyboard.setClipboard(logs);
-        copyNotice="Скопировано: "+logs.length()+" симв.";
+        int lineCount=logs.split("\\R",-1).length;
+        copyNotice="Скопировано: "+lineCount+" строк";
+        copyNoticeUntil=System.currentTimeMillis()+3000L;
+    }
+
+    private static void openLogFolder(){
+        boolean opened=AiLogFile.openDirectory();
+        copyNotice=opened?"Папка логов открыта":"Не удалось открыть папку логов";
         copyNoticeUntil=System.currentTimeMillis()+3000L;
     }
 
@@ -387,22 +403,20 @@ public final class AiLogOverlay {
         long revision=AiLogClient.getRevision();
         if(cachedRevision==revision&&cachedWidth==maxWidth&&cachedFilter==filter)return;
 
-        int oldLineCount=CACHED_LINES.size();
         boolean wasScrolled=scrollOffset>0;
         CACHED_LINES.clear();
+        int addedLines=0;
         List<AiLogClient.LogLine> lines=AiLogClient.snapshot(filter);
         for(AiLogClient.LogLine entry:lines){
             String prefix="["+entry.time()+"] ["+entry.level()+"] ["+entry.logger()+"] ";
-            String[] messageLines=entry.message().replace('\r','\n').split("\n",-1);
+            String[] messageLines=entry.message().replace('\\r','\\n').split("\\n",-1);
             for(int index=0;index<messageLines.length;index++){
-                appendWrapped(renderer,(index==0?prefix:"    ")+messageLines[index],
+                addedLines+=appendWrapped(renderer,(index==0?prefix:"    ")+messageLines[index],
                         Math.max(24,maxWidth),entry.color());
-                if(CACHED_LINES.size()>=10000)break;
             }
-            if(CACHED_LINES.size()>=10000)break;
         }
 
-        if(wasScrolled)scrollOffset+=CACHED_LINES.size()-oldLineCount;
+        if(wasScrolled)scrollOffset+=addedLines;
         cachedRevision=revision;
         cachedWidth=maxWidth;
         cachedFilter=filter;
@@ -410,20 +424,27 @@ public final class AiLogOverlay {
         scrollOffset=Math.max(0,Math.min(scrollOffset,Math.max(0,CACHED_LINES.size()-visible)));
     }
 
-    private static void appendWrapped(TextRenderer renderer,String raw,int maxWidth,int color){
+    private static int appendWrapped(TextRenderer renderer,String raw,int maxWidth,int color){
         String remaining=raw;
+        int appended=0;
         if(remaining.isEmpty()){
-            CACHED_LINES.add(new DisplayLine("",color));
-            return;
+            addDisplayLine(new DisplayLine("",color));
+            return 1;
         }
         while(!remaining.isEmpty()){
             String part=renderer.trimToWidth(remaining,maxWidth);
             if(part.isEmpty())part=remaining.substring(0,1);
-            CACHED_LINES.add(new DisplayLine(part,color));
+            addDisplayLine(new DisplayLine(part,color));
+            appended++;
             if(part.length()>=remaining.length())break;
             remaining=remaining.substring(part.length()).stripLeading();
-            if(CACHED_LINES.size()>=10000)break;
         }
+        return appended;
+    }
+
+    private static void addDisplayLine(DisplayLine line){
+        CACHED_LINES.add(line);
+        if(CACHED_LINES.size()>MAX_DISPLAY_LINES)CACHED_LINES.remove(0);
     }
 
     private static void drawSettings(DrawContext context,TextRenderer renderer,int right){
@@ -444,6 +465,17 @@ public final class AiLogOverlay {
         int labelWidth=renderer.getWidth(label);
         context.drawTextWithShadow(renderer,Text.literal(label),
                 toggleLeft+(toggleRight-toggleLeft-labelWidth)/2,toggleTop+4,0xFFFFFFFF);
+    }
+
+    private static void folderButton(DrawContext context,int bx,int by,double mouseX,double mouseY){
+        boolean hovered=mouseX>=bx&&mouseX<=bx+18&&mouseY>=by&&mouseY<=by+16;
+        int background=hovered?0xFF687583:0xFF4B5561;
+        rounded(context,bx,by,bx+18,by+16,background);
+        int icon=0xFFEAF0F6;
+        context.fill(bx+3,by+4,bx+9,by+7,icon);
+        context.fill(bx+3,by+6,bx+15,by+13,icon);
+        context.fill(bx+4,by+7,bx+14,by+12,background);
+        context.fill(bx+5,by+8,bx+14,by+12,icon);
     }
 
     private static void gearButton(DrawContext context,int bx,int by,double mouseX,double mouseY){
@@ -599,11 +631,12 @@ public final class AiLogOverlay {
     }
 
     private static void drawTabs(DrawContext context,TextRenderer renderer,int tabY,int panelWidth){
-        String[] labels={"Logs","Custom logs","Errors"};
+        String[] labels={"Logs","Warns","Errors"};
+        int[] tabFilters={AiLogClient.FILTER_ALL,AiLogClient.FILTER_WARNINGS,AiLogClient.FILTER_ERRORS};
         int tabWidth=(panelWidth-24)/3;
         for(int i=0;i<labels.length;i++){
             int tabX=x+8+i*tabWidth;
-            boolean active=filter==i;
+            boolean active=filter==tabFilters[i];
             rounded(context,tabX,tabY,tabX+tabWidth-3,tabY+18,active?0xFF586777:0xFF4A535E);
             if(active)context.fill(tabX+5,tabY+1,tabX+tabWidth-8,tabY+2,0xFFB5D3EF);
             int textWidth=renderer.getWidth(labels[i]);
