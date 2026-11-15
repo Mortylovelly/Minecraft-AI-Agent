@@ -80,7 +80,7 @@ public final class AiCustomLogFile {
     public static void appendRaw(String level, String logger, String message) {
         String time = TIME_FORMAT.format(Instant.now().atZone(ZoneId.systemDefault()));
         String safeMessage = AiLogFile.redactSecrets(message == null ? "" : message)
-                .replace('\r', ' ').replace('\n', " ");
+                .replace('\r', ' ').replace('\n', ' ');
         String line = "[" + time + "] [" + normalizeLevel(level) + "] [" + safeField(logger)
                 + "] [CUSTOM] " + safeMessage + System.lineSeparator();
         appendText(line);

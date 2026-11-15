@@ -46,7 +46,7 @@ public final class AiMemoryTelemetry {
     public static synchronized void initialize() {
         if (initialized) return;
         initialized = true;
-        AiCustomLogFile.appendRaw("INFO", "MEMORY-MONITOR",
+        AiLogClient.addCustomLocal("INFO", "MEMORY-MONITOR",
                 "Started; interval=" + SAMPLE_INTERVAL_SECONDS
                         + "s; captures heap, non-heap, direct/mapped buffers, memory pools, GC, threads, process and system RAM.");
         MONITOR.scheduleWithFixedDelay(AiMemoryTelemetry::sampleSafely,
@@ -55,12 +55,12 @@ public final class AiMemoryTelemetry {
 
     private static void sampleSafely() {
         try {
-            AiCustomLogFile.appendRaw("INFO", "JVM-MEMORY", buildSnapshot());
+            AiLogClient.addCustomLocal("INFO", "JVM-MEMORY", buildSnapshot());
         } catch (Throwable throwable) {
             long now = System.nanoTime();
             if (now - lastFailureLogNanos > TimeUnit.SECONDS.toNanos(30L)) {
                 lastFailureLogNanos = now;
-                AiCustomLogFile.appendRaw("WARN", "MEMORY-MONITOR",
+                AiLogClient.addCustomLocal("WARN", "MEMORY-MONITOR",
                         "Snapshot failed: " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
             }
         }
@@ -170,7 +170,7 @@ public final class AiMemoryTelemetry {
     private static void checkPressure(double heapPercent, double systemPercent) {
         if (heapPercent >= 90.0 && !heapPressureWarning) {
             heapPressureWarning = true;
-            AiCustomLogFile.appendRaw("WARN", "MEMORY-PRESSURE",
+            AiLogClient.addCustomLocal("WARN", "MEMORY-PRESSURE",
                     "JVM heap reached " + formatPercent(heapPercent) + " of its maximum.");
         } else if (heapPercent >= 0.0 && heapPercent < 85.0) {
             heapPressureWarning = false;
@@ -178,7 +178,7 @@ public final class AiMemoryTelemetry {
 
         if (systemPercent >= 90.0 && !systemPressureWarning) {
             systemPressureWarning = true;
-            AiCustomLogFile.appendRaw("WARN", "MEMORY-PRESSURE",
+            AiLogClient.addCustomLocal("WARN", "MEMORY-PRESSURE",
                     "System RAM reached " + formatPercent(systemPercent) + " usage.");
         } else if (systemPercent >= 0.0 && systemPercent < 85.0) {
             systemPressureWarning = false;

@@ -129,7 +129,7 @@ public final class AiLogClient {
      */
     public static synchronized List<LogLine> snapshot(int filter) {
         boolean forceCustom = filter == FILTER_CUSTOM;
-        List<LogLine> source = (forceCustom || customSourceSelected()) ? CUSTOM_LINES : NORMAL_LINES;
+        Iterable<LogLine> source = (forceCustom || customSourceSelected()) ? CUSTOM_LINES : NORMAL_LINES;
         int effectiveFilter = forceCustom ? FILTER_ALL : filter;
 
         List<LogLine> result = new ArrayList<>();
@@ -181,8 +181,14 @@ public final class AiLogClient {
 
     public static synchronized void addLocal(String level, String logger, String message) {
         LogLine line = append(System.currentTimeMillis(), level, logger, message, true);
-        // Preserve the existing regular archive while also writing the dedicated custom archive.
+        // Project logs remain visible in both the full normal stream and the isolated custom stream.
         AiLogFile.appendBatch(List.of(line));
+        AiCustomLogFile.appendBatch(List.of(line));
+    }
+
+    /** Adds telemetry only to the custom source; it never pollutes the ordinary log archive. */
+    public static synchronized void addCustomLocal(String level, String logger, String message) {
+        LogLine line = appendCustomOnly(System.currentTimeMillis(), level, logger, message);
         AiCustomLogFile.appendBatch(List.of(line));
     }
 
@@ -205,6 +211,26 @@ public final class AiLogClient {
             }
         }
         return String.join(System.lineSeparator(), tail);
+    }
+
+    private static LogLine appendCustomOnly(long timestamp, String level, String logger, String message) {
+        String normalizedLevel = normalizeLevel(level);
+        String safeMessage = AiLogFile.redactSecrets(message == null ? "" : message);
+        if (safeMessage.length() > 1800) safeMessage = safeMessage.substring(0, 1800) + " …";
+        String safeLogger = logger == null ? "Minecraft" : logger;
+        if (safeLogger.length() > 96) safeLogger = safeLogger.substring(0, 96);
+
+        String time = TIME_FORMAT.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()));
+        LogLine line = new LogLine(timestamp, time, normalizedLevel, safeLogger, safeMessage, true);
+        CUSTOM_LINES.addLast(line);
+        while (CUSTOM_LINES.size() > MAX_LINES) CUSTOM_LINES.removeFirst();
+
+        long lineCount = physicalLines(safeMessage);
+        customTotalCount += lineCount;
+        if (line.isWarning()) customWarningCount += lineCount;
+        if (line.isError()) customErrorCount += lineCount;
+        revision++;
+        return line;
     }
 
     private static LogLine append(long timestamp, String level, String logger, String message, boolean custom) {
