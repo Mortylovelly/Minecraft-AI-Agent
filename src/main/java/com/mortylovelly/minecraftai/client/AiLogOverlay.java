@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class AiLogOverlay {
-    private static final int BASE_WIDTH=360, BASE_HEIGHT=210, DIAGNOSTICS_HEIGHT=164, SETTINGS_HEIGHT=160, HEADER_HEIGHT=29;
+    private static final int BASE_WIDTH=360, BASE_HEIGHT=210, DIAGNOSTICS_HEIGHT=210, SETTINGS_HEIGHT=160, HEADER_HEIGHT=29;
     private static final int MAX_DISPLAY_LINES=500;
     private static final float MIN_PANEL_SCALE=0.25F, MAX_PANEL_SCALE=1.6F;
     private static boolean open, visible, settingsOpen, diagnosticsEnabled, dragging, resizing, pointerCaptured;
@@ -569,6 +569,7 @@ public final class AiLogOverlay {
         drawHistoryChart(context,renderer,x+14+chartWidth,firstChartTop,chartWidth,42,"TPS",data.tpsHistory(),"TPS");
         drawHistoryChart(context,renderer,x+8,secondChartTop,chartWidth,42,"GPU",data.gpuHistory(),"PERCENT");
         drawHistoryChart(context,renderer,x+14+chartWidth,secondChartTop,chartWidth,42,"CPU",data.cpuHistory(),"PERCENT");
+        drawHistoryChart(context,renderer,x+8,top+156,BASE_WIDTH-16,42,"RAM",data.ramHistory(),"PERCENT");
     }
 
     private static void drawMetric(DrawContext context,TextRenderer renderer,String label,String value,
