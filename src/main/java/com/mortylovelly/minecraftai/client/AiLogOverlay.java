@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class AiLogOverlay {
-    private static final int BASE_WIDTH=360, BASE_HEIGHT=210, DIAGNOSTICS_HEIGHT=164, HEADER_HEIGHT=29;
+    private static final int BASE_WIDTH=360, BASE_HEIGHT=210, DIAGNOSTICS_HEIGHT=164, SETTINGS_HEIGHT=160, HEADER_HEIGHT=29;
     private static final int MAX_DISPLAY_LINES=500;
     private static final float MIN_PANEL_SCALE=0.25F, MAX_PANEL_SCALE=1.6F;
     private static boolean open, visible, settingsOpen, diagnosticsEnabled, dragging, resizing, pointerCaptured;
@@ -109,7 +109,8 @@ public final class AiLogOverlay {
     }
 
     private static int panelLogicalHeight(){
-        return BASE_HEIGHT+(!settingsOpen&&diagnosticsEnabled?DIAGNOSTICS_HEIGHT:0);
+        if(settingsOpen)return SETTINGS_HEIGHT;
+        return BASE_HEIGHT+(diagnosticsEnabled?DIAGNOSTICS_HEIGHT:0);
     }
 
     private static int visiblePanelHeight(){
@@ -176,11 +177,12 @@ public final class AiLogOverlay {
             return;
         }
 
-        context.drawTextWithShadow(renderer,Text.literal("SERVER LOGS"),x+11,y+9,0xFFFFFFFF);
+        boolean customSource=AiClientConfig.isCustomLogsEnabled();
+        context.drawTextWithShadow(renderer,Text.literal(customSource?"CUSTOM LOGS":"SERVER LOGS"),x+11,y+9,0xFFFFFFFF);
 
         boolean copied=System.currentTimeMillis()<copyNoticeUntil;
-        String status=copied?copyNotice:AiLogClient.getConnectionStatus();
-        int statusColor=copied||AiLogClient.isConnected()?0xFF91DDA5:0xFFFFD27A;
+        String status=copied?copyNotice:(customSource?"LOCAL · JVM/RAM":"".equals(AiLogClient.getConnectionStatus())?"Ожидание логов...":AiLogClient.getConnectionStatus());
+        int statusColor=copied||customSource||AiLogClient.isConnected()?0xFF91DDA5:0xFFFFD27A;
         int statusMax=right-116-(x+112)-5;
         if(statusMax>18){
             context.drawTextWithShadow(renderer,
@@ -288,13 +290,22 @@ public final class AiLogOverlay {
 
         if(settingsOpen){
             int switchLeft=x+16;
-            int switchTop=y+61;
             int switchRight=right-16;
-            int switchBottom=switchTop+36;
-            if(hitX>=switchLeft&&hitX<=switchRight&&hitY>=switchTop&&hitY<=switchBottom){
+            if(hitX>=switchLeft&&hitX<=switchRight&&hitY>=y+56&&hitY<=y+98){
                 diagnosticsEnabled=!diagnosticsEnabled;
                 AiDiagnostics.setEnabled(diagnosticsEnabled);
                 ensureBounds(screenWidth,screenHeight);
+                AiUiSound.playClick();
+                return true;
+            }
+            if(hitX>=switchLeft&&hitX<=switchRight&&hitY>=y+104&&hitY<=y+146){
+                boolean customEnabled=!AiClientConfig.isCustomLogsEnabled();
+                AiClientConfig.setCustomLogsEnabled(customEnabled);
+                AiLogClient.sourceChanged();
+                cachedRevision=-1L;
+                scrollOffset=0;
+                copyNotice=customEnabled?"Выбраны кастомные логи":"Выбраны обычные логи";
+                copyNoticeUntil=System.currentTimeMillis()+2500L;
                 AiUiSound.playClick();
                 return true;
             }
@@ -377,8 +388,11 @@ public final class AiLogOverlay {
     }
 
     private static void openLogFolder(){
-        boolean opened=AiLogFile.openDirectory();
-        copyNotice=opened?"Папка логов открыта":"Не удалось открыть папку логов";
+        boolean customSource=AiClientConfig.isCustomLogsEnabled();
+        boolean opened=customSource?AiCustomLogFile.openDirectory():AiLogFile.openDirectory();
+        copyNotice=opened
+                ?(customSource?"Папка кастомных логов открыта":"Папка обычных логов открыта")
+                :"Не удалось открыть папку логов";
         copyNoticeUntil=System.currentTimeMillis()+3000L;
     }
 
@@ -449,19 +463,28 @@ public final class AiLogOverlay {
 
     private static void drawSettings(DrawContext context,TextRenderer renderer,int right){
         int cardLeft=x+16;
-        int cardTop=y+61;
         int cardRight=right-16;
-        int cardBottom=cardTop+36;
+        drawSettingsCard(context,renderer,cardLeft,cardRight,y+56,
+                "DIAGNOSTICS","FPS · PING · TPS · TICK · CPU/GPU",diagnosticsEnabled);
+        drawSettingsCard(context,renderer,cardLeft,cardRight,y+104,
+                "CUSTOM LOGS","Separate archive · detailed JVM/RAM",AiClientConfig.isCustomLogsEnabled());
+    }
+
+    private static void drawSettingsCard(DrawContext context,TextRenderer renderer,
+                                         int cardLeft,int cardRight,int cardTop,
+                                         String title,String description,boolean enabled){
+        int cardBottom=cardTop+42;
         rounded(context,cardLeft,cardTop,cardRight,cardBottom,0xFF505B67);
-        context.drawTextWithShadow(renderer,Text.literal("DIAGNOSTICS"),
-                cardLeft+10,cardTop+13,0xFFF0F3F7);
+        context.drawTextWithShadow(renderer,Text.literal(title),cardLeft+10,cardTop+8,0xFFF0F3F7);
+        context.drawTextWithShadow(renderer,Text.literal(renderer.trimToWidth(description,cardRight-cardLeft-82)),
+                cardLeft+10,cardTop+24,0xFFB8C1CB);
         int toggleLeft=cardRight-55;
-        int toggleTop=cardTop+8;
+        int toggleTop=cardTop+9;
         int toggleRight=cardRight-8;
-        int toggleBottom=cardBottom-8;
+        int toggleBottom=cardBottom-9;
         rounded(context,toggleLeft,toggleTop,toggleRight,toggleBottom,
-                diagnosticsEnabled?0xFF427A5B:0xFF626B76);
-        String label=diagnosticsEnabled?"ON":"OFF";
+                enabled?0xFF427A5B:0xFF626B76);
+        String label=enabled?"ON":"OFF";
         int labelWidth=renderer.getWidth(label);
         context.drawTextWithShadow(renderer,Text.literal(label),
                 toggleLeft+(toggleRight-toggleLeft-labelWidth)/2,toggleTop+4,0xFFFFFFFF);

@@ -16,21 +16,24 @@ import java.util.Locale;
 
 public final class AiLogClient {
     public static final int FILTER_ALL = 0;
-    // Kept for internal/diagnostic use; this is no longer a visible HUD tab.
+    /** Compatibility filter for callers that still explicitly request custom-only entries. */
     public static final int FILTER_CUSTOM = 1;
     public static final int FILTER_ERRORS = 2;
     public static final int FILTER_WARNINGS = 3;
 
-    // Only the in-memory HUD buffer is bounded. AiLogFile keeps its independent disk archive.
     private static final int MAX_LINES = 500;
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
-    private static final ArrayDeque<LogLine> LINES = new ArrayDeque<>(MAX_LINES);
+    private static final ArrayDeque<LogLine> NORMAL_LINES = new ArrayDeque<>(MAX_LINES);
+    private static final ArrayDeque<LogLine> CUSTOM_LINES = new ArrayDeque<>(MAX_LINES);
     private static final LinkedHashSet<Long> REMOTE_SEQUENCES = new LinkedHashSet<>();
     private static final int MAX_REMOTE_SEQUENCE_CACHE = 8192;
 
-    private static long totalCount;
-    private static long warningCount;
-    private static long errorCount;
+    private static long normalTotalCount;
+    private static long normalWarningCount;
+    private static long normalErrorCount;
+    private static long customTotalCount;
+    private static long customWarningCount;
+    private static long customErrorCount;
     private static long revision;
     private static String connectionStatus = "Подключение к серверным логам...";
     private static boolean connected;
@@ -59,22 +62,22 @@ public final class AiLogClient {
     }
 
     public static synchronized void resetForWorldJoin() {
-        LINES.clear();
+        NORMAL_LINES.clear();
         REMOTE_SEQUENCES.clear();
-        totalCount = 0;
-        warningCount = 0;
-        errorCount = 0;
+        normalTotalCount = 0;
+        normalWarningCount = 0;
+        normalErrorCount = 0;
         revision++;
         connected = false;
         connectionStatus = "Поток логов выключен. Открой Logs HUD для просмотра.";
     }
 
     public static synchronized void onDisconnect() {
-        LINES.clear();
+        NORMAL_LINES.clear();
         REMOTE_SEQUENCES.clear();
-        totalCount = 0;
-        warningCount = 0;
-        errorCount = 0;
+        normalTotalCount = 0;
+        normalWarningCount = 0;
+        normalErrorCount = 0;
         revision++;
         connected = false;
         connectionStatus = "Не подключено к миру";
@@ -86,6 +89,11 @@ public final class AiLogClient {
         revision++;
     }
 
+    /** Invalidates the HUD cache when the selected log source changes. */
+    public static synchronized void sourceChanged() {
+        revision++;
+    }
+
     public static synchronized String getConnectionStatus() {
         return connectionStatus;
     }
@@ -94,28 +102,40 @@ public final class AiLogClient {
         return connected;
     }
 
+    private static boolean customSourceSelected() {
+        return AiClientConfig.isCustomLogsEnabled();
+    }
+
     public static synchronized long getTotalCount() {
-        return totalCount;
+        return customSourceSelected() ? customTotalCount : normalTotalCount;
     }
 
     public static synchronized long getWarningCount() {
-        return warningCount;
+        return customSourceSelected() ? customWarningCount : normalWarningCount;
     }
 
     public static synchronized long getErrorCount() {
-        return errorCount;
+        return customSourceSelected() ? customErrorCount : normalErrorCount;
     }
 
     public static synchronized long getRevision() {
         return revision;
     }
 
+    /**
+     * The visible WARN/ERROR filters are applied to the active source. Normal and
+     * custom buffers are kept separately so changing the settings switch never
+     * mixes their history.
+     */
     public static synchronized List<LogLine> snapshot(int filter) {
+        boolean forceCustom = filter == FILTER_CUSTOM;
+        List<LogLine> source = (forceCustom || customSourceSelected()) ? CUSTOM_LINES : NORMAL_LINES;
+        int effectiveFilter = forceCustom ? FILTER_ALL : filter;
+
         List<LogLine> result = new ArrayList<>();
-        for (LogLine line : LINES) {
-            if (filter == FILTER_CUSTOM && !line.custom()) continue;
-            if (filter == FILTER_ERRORS && !line.isError()) continue;
-            if (filter == FILTER_WARNINGS && !line.isWarning()) continue;
+        for (LogLine line : source) {
+            if (effectiveFilter == FILTER_ERRORS && !line.isError()) continue;
+            if (effectiveFilter == FILTER_WARNINGS && !line.isWarning()) continue;
             result.add(line);
         }
         return result;
@@ -126,7 +146,9 @@ public final class AiLogClient {
             JsonObject root = JsonParser.parseString(rawJson).getAsJsonObject();
             JsonArray entries = root.getAsJsonArray("lines");
             if (entries == null) return;
-            List<LogLine> persistedLines = new ArrayList<>();
+
+            List<LogLine> normalArchive = new ArrayList<>();
+            List<LogLine> customArchive = new ArrayList<>();
             for (JsonElement element : entries) {
                 if (!element.isJsonObject()) continue;
                 JsonObject item = element.getAsJsonObject();
@@ -137,26 +159,36 @@ public final class AiLogClient {
                         REMOTE_SEQUENCES.remove(REMOTE_SEQUENCES.iterator().next());
                     }
                 }
+
                 long timestamp = item.has("timestamp") ? item.get("timestamp").getAsLong() : System.currentTimeMillis();
                 String level = string(item, "level", "INFO").toUpperCase(Locale.ROOT);
                 String logger = string(item, "logger", "Minecraft");
                 String message = string(item, "message", "");
                 boolean custom = item.has("custom") && item.get("custom").getAsBoolean();
-                persistedLines.add(append(timestamp, level, logger, message, custom));
+                LogLine line = append(timestamp, level, logger, message, custom);
+                normalArchive.add(line);
+                if (custom) customArchive.add(line);
             }
-            AiLogFile.appendBatch(persistedLines);
+
+            // The regular archive always receives the complete server stream.
+            AiLogFile.appendBatch(normalArchive);
+            // The separate custom archive receives only explicitly tagged project logs.
+            AiCustomLogFile.appendBatch(customArchive);
         } catch (RuntimeException exception) {
             AiAgentLog.warn("Не удалось разобрать пакет серверных логов: " + exception.getMessage());
         }
     }
 
     public static synchronized void addLocal(String level, String logger, String message) {
-        AiLogFile.appendBatch(List.of(append(System.currentTimeMillis(), level, logger, message, true)));
+        LogLine line = append(System.currentTimeMillis(), level, logger, message, true);
+        // Preserve the existing regular archive while also writing the dedicated custom archive.
+        AiLogFile.appendBatch(List.of(line));
+        AiCustomLogFile.appendBatch(List.of(line));
     }
 
     /**
-     * Exports only the currently selected HUD category. The export is limited to the
-     * newest physical log lines shown by the bounded HUD buffer; the disk archive is untouched.
+     * Exports the newest physical lines from the currently selected source and tab.
+     * The other source's archive is never included.
      */
     public static synchronized String exportFilteredLogs(int filter, int requestedMaxLines) {
         int maxLines = Math.max(1, Math.min(MAX_LINES, requestedMaxLines));
@@ -172,7 +204,6 @@ public final class AiLogClient {
                 while (tail.size() > maxLines) tail.removeFirst();
             }
         }
-
         return String.join(System.lineSeparator(), tail);
     }
 
@@ -185,29 +216,42 @@ public final class AiLogClient {
 
         String time = TIME_FORMAT.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()));
         LogLine line = new LogLine(timestamp, time, normalizedLevel, safeLogger, safeMessage, custom);
-        LINES.addLast(line);
-        while (LINES.size() > MAX_LINES) LINES.removeFirst();
 
-        long physicalLines = 1L;
-        for (int index = 0; index < safeMessage.length(); index++) {
-            if (safeMessage.charAt(index) == '\n') physicalLines++;
+        NORMAL_LINES.addLast(line);
+        while (NORMAL_LINES.size() > MAX_LINES) NORMAL_LINES.removeFirst();
+        normalTotalCount += physicalLines(safeMessage);
+        if (line.isWarning()) normalWarningCount += physicalLines(safeMessage);
+        if (line.isError()) normalErrorCount += physicalLines(safeMessage);
+
+        if (custom) {
+            CUSTOM_LINES.addLast(line);
+            while (CUSTOM_LINES.size() > MAX_LINES) CUSTOM_LINES.removeFirst();
+            customTotalCount += physicalLines(safeMessage);
+            if (line.isWarning()) customWarningCount += physicalLines(safeMessage);
+            if (line.isError()) customErrorCount += physicalLines(safeMessage);
         }
-        totalCount += physicalLines;
-        if (line.isWarning()) warningCount += physicalLines;
-        if (line.isError()) errorCount += physicalLines;
+
         revision++;
         return line;
     }
 
+    private static long physicalLines(String message) {
+        long count = 1L;
+        for (int index = 0; index < message.length(); index++) {
+            if (message.charAt(index) == '\n') count++;
+        }
+        return count;
+    }
+
     private static String normalizeLevel(String level) {
-        if(level==null||level.isBlank())return "INFO";
-        String normalized=level.trim().toUpperCase(Locale.ROOT);
-        if(normalized.contains("FATAL")||normalized.contains("CRITICAL"))return "FATAL";
-        if(normalized.contains("ERROR")||normalized.equals("ERR")||normalized.equals("SEVERE"))return "ERROR";
-        if(normalized.contains("WARN"))return "WARN";
-        if(normalized.contains("DEBUG"))return "DEBUG";
-        if(normalized.contains("TRACE"))return "TRACE";
-        if(normalized.contains("INFO"))return "INFO";
+        if (level == null || level.isBlank()) return "INFO";
+        String normalized = level.trim().toUpperCase(Locale.ROOT);
+        if (normalized.contains("FATAL") || normalized.contains("CRITICAL")) return "FATAL";
+        if (normalized.contains("ERROR") || normalized.equals("ERR") || normalized.equals("SEVERE")) return "ERROR";
+        if (normalized.contains("WARN")) return "WARN";
+        if (normalized.contains("DEBUG")) return "DEBUG";
+        if (normalized.contains("TRACE")) return "TRACE";
+        if (normalized.contains("INFO")) return "INFO";
         return normalized;
     }
 

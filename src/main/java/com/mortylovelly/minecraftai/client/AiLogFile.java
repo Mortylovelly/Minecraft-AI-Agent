@@ -45,12 +45,11 @@ public final class AiLogFile {
     public static boolean openDirectory() {
         synchronized (LOCK) {
             try {
-                Path minecraftLogsDirectory = FabricLoader.getInstance().getGameDir().resolve("logs");
-                Files.createDirectories(minecraftLogsDirectory);
+                Files.createDirectories(LOG_DIRECTORY);
                 if (!Desktop.isDesktopSupported()) return false;
                 Desktop desktop = Desktop.getDesktop();
                 if (!desktop.isSupported(Desktop.Action.OPEN)) return false;
-                desktop.open(minecraftLogsDirectory.toFile());
+                desktop.open(LOG_DIRECTORY.toFile());
                 return true;
             } catch (Exception exception) {
                 System.err.println("[Minecraft AI Agent] Could not open log directory: " + exception.getMessage());
@@ -134,6 +133,7 @@ public final class AiLogFile {
     }
 
     public static JsonObject search(String query,String level,boolean customOnly,int requestedLimit,int requestedOffset){
+        if(customOnly)return AiCustomLogFile.search(query,level,requestedLimit,requestedOffset);
         String safeQuery=query==null?"":query.trim().toLowerCase(Locale.ROOT).replace('ё','е');
         String safeLevel=level==null?"all":level.trim().toLowerCase(Locale.ROOT);
         if(!List.of("all","error","warning","info","debug","trace").contains(safeLevel))safeLevel="all";

@@ -18,6 +18,7 @@ public final class AiClientConfig {
     private static String openRouterApiKey = "";
     private static String geminiApiKey = "";
     private static String provider = "gemini";
+    private static boolean customLogsEnabled;
 
     private AiClientConfig() {}
 
@@ -31,6 +32,9 @@ public final class AiClientConfig {
             groqApiKey = readString(object, "groq_api_key", "");
             openRouterApiKey = readString(object, "openrouter_api_key", "");
             geminiApiKey = readString(object, "gemini_api_key", "");
+            customLogsEnabled = object.has("custom_logs_enabled")
+                    && !object.get("custom_logs_enabled").isJsonNull()
+                    && object.get("custom_logs_enabled").getAsBoolean();
 
             if (object.has("provider")) {
                 String saved = object.get("provider").getAsString().trim().toLowerCase();
@@ -42,6 +46,14 @@ public final class AiClientConfig {
     }
 
     public static synchronized String getProvider() { return provider; }
+
+    public static synchronized boolean isCustomLogsEnabled() { return customLogsEnabled; }
+
+    public static synchronized void setCustomLogsEnabled(boolean value) {
+        if (customLogsEnabled == value) return;
+        customLogsEnabled = value;
+        save();
+    }
 
     public static synchronized void setProvider(String value) {
         String normalized = value == null ? "gemini" : value.trim().toLowerCase();
@@ -91,6 +103,7 @@ public final class AiClientConfig {
         object.addProperty("groq_api_key", groqApiKey);
         object.addProperty("openrouter_api_key", openRouterApiKey);
         object.addProperty("gemini_api_key", geminiApiKey);
+        object.addProperty("custom_logs_enabled", customLogsEnabled);
         try {
             Files.createDirectories(CONFIG_PATH.getParent());
             Files.writeString(CONFIG_PATH, object.toString(), StandardCharsets.UTF_8);

@@ -22,7 +22,10 @@ public final class MinecraftAiAgentClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        AiClientConfig.load();
         AiLogFile.initialize();
+        AiCustomLogFile.initialize();
+        AiMemoryTelemetry.initialize();
         System.setProperty("java.net.preferIPv4Stack", "true");
         System.setProperty("java.net.preferIPv4Addresses", "true");
 
