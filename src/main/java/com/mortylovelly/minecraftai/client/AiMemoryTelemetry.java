@@ -39,6 +39,10 @@ public final class AiMemoryTelemetry {
     private static boolean heapPressureWarning;
     private static boolean systemPressureWarning;
     private static long lastFailureLogNanos;
+    private static long previousHeapUsed = -1L;
+    private static long previousOldGenUsed = -1L;
+    private static long previousGcCount = -1L;
+    private static long previousGcMillis = -1L;
 
     private AiMemoryTelemetry() {}
 
@@ -48,7 +52,8 @@ public final class AiMemoryTelemetry {
         initialized = true;
         AiLogClient.addCustomLocal("INFO", "MEMORY-MONITOR",
                 "Started; interval=" + SAMPLE_INTERVAL_SECONDS
-                        + "s; captures heap, non-heap, direct/mapped buffers, memory pools, GC, threads, process and system RAM.");
+                        + "s; captures heap/Old Gen deltas, non-heap, direct/mapped buffers, memory pools, GC, threads, process and system RAM.");
+        AiAllocationProfiler.initialize();
         MONITOR.scheduleWithFixedDelay(AiMemoryTelemetry::sampleSafely,
                 2L, SAMPLE_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
@@ -118,10 +123,18 @@ public final class AiMemoryTelemetry {
             gc.append(safeName(collector.getName())).append(':').append(count).append('/').append(time).append("ms");
         }
 
+        long oldGenUsed = -1L;
+        long oldGenCommitted = -1L;
+        long oldGenMax = -1L;
         StringBuilder pools = new StringBuilder();
         for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
             MemoryUsage usage = pool.getUsage();
             if (usage == null) continue;
+            if (pool.getName() != null && pool.getName().toLowerCase(Locale.ROOT).contains("old")) {
+                oldGenUsed = usage.getUsed();
+                oldGenCommitted = usage.getCommitted();
+                oldGenMax = usage.getMax();
+            }
             if (!pools.isEmpty()) pools.append(';');
             pools.append(safeName(pool.getName())).append('=')
                     .append(formatBytes(usage.getUsed())).append('/')
@@ -134,7 +147,21 @@ public final class AiMemoryTelemetry {
 
         checkPressure(heapPercent, systemPercent);
 
+        String heapUsedDelta = formatDelta(heapUsed, previousHeapUsed);
+        String oldGenUsedDelta = formatDelta(oldGenUsed, previousOldGenUsed);
+        String gcCountDelta = previousGcCount < 0L ? "n/a" : Long.toString(gcCount - previousGcCount);
+        String gcMillisDelta = previousGcMillis < 0L ? "n/a" : Long.toString(gcMillis - previousGcMillis) + "ms";
+        previousHeapUsed = heapUsed;
+        previousOldGenUsed = oldGenUsed;
+        previousGcCount = gcCount;
+        previousGcMillis = gcMillis;
+
         return "heapUsed=" + formatBytes(heapUsed)
+                + " heapUsedDelta=" + heapUsedDelta
+                + " oldGenUsed=" + formatBytes(oldGenUsed)
+                + " oldGenUsedDelta=" + oldGenUsedDelta
+                + " oldGenCommitted=" + formatBytes(oldGenCommitted)
+                + " oldGenMax=" + formatLimit(oldGenMax)
                 + " heapCommitted=" + formatBytes(heapCommitted)
                 + " heapMax=" + formatLimit(heapMax)
                 + " heapPct=" + formatPercent(heapPercent)
@@ -163,6 +190,7 @@ public final class AiMemoryTelemetry {
                 + " peakThreads=" + threads.getPeakThreadCount()
                 + " gcTotalCount=" + gcCount
                 + " gcTotalTimeMs=" + gcMillis
+                + " gcSinceSample=" + gcCountDelta + "/" + gcMillisDelta
                 + " gcPools={" + gc + "}"
                 + " memoryPools={" + pools + "}";
     }
@@ -273,6 +301,12 @@ public final class AiMemoryTelemetry {
 
     private static String formatLimit(long bytes) {
         return bytes < 0L ? "unbounded" : formatBytes(bytes);
+    }
+
+    private static String formatDelta(long current, long previous) {
+        if (current < 0L || previous < 0L) return "n/a";
+        long delta = current - previous;
+        return (delta > 0L ? "+" : "") + formatBytes(delta);
     }
 
     private static String formatPercent(double percent) {
