@@ -20,6 +20,7 @@ public final class AiDiagnostics {
     private static final float[] TPS_HISTORY=new float[HISTORY_SIZE];
     private static final float[] GPU_HISTORY=new float[HISTORY_SIZE];
     private static final float[] CPU_HISTORY=new float[HISTORY_SIZE];
+    private static final float[] RAM_HISTORY=new float[HISTORY_SIZE];
     private static final ScheduledExecutorService SYSTEM_MONITOR=Executors.newSingleThreadScheduledExecutor(task->{
         Thread thread=new Thread(task,"Minecraft AI Agent diagnostics");
         thread.setDaemon(true);
@@ -47,6 +48,7 @@ public final class AiDiagnostics {
     private static int tpsHistoryCount,tpsHistoryNext;
     private static int gpuHistoryCount,gpuHistoryNext;
     private static int cpuHistoryCount,cpuHistoryNext;
+    private static int ramHistoryCount,ramHistoryNext;
 
     private AiDiagnostics(){}
 
@@ -76,10 +78,12 @@ public final class AiDiagnostics {
         tpsHistoryCount=0;tpsHistoryNext=0;
         gpuHistoryCount=0;gpuHistoryNext=0;
         cpuHistoryCount=0;cpuHistoryNext=0;
+        ramHistoryCount=0;ramHistoryNext=0;
         java.util.Arrays.fill(FPS_HISTORY,0.0F);
         java.util.Arrays.fill(TPS_HISTORY,-1.0F);
         java.util.Arrays.fill(GPU_HISTORY,-1.0F);
         java.util.Arrays.fill(CPU_HISTORY,-1.0F);
+        java.util.Arrays.fill(RAM_HISTORY,-1.0F);
     }
 
     public static synchronized void onFrame(MinecraftClient client){
@@ -107,6 +111,7 @@ public final class AiDiagnostics {
             appendTps(serverTps);
             appendGpu(gpuLoad);
             appendCpu(cpuLoad);
+            appendRam(ramLoad());
             historySampleNanos=now;
         }
     }
@@ -136,6 +141,14 @@ public final class AiDiagnostics {
         CPU_HISTORY[cpuHistoryNext]=validOrMissing(value);
         cpuHistoryNext=(cpuHistoryNext+1)%HISTORY_SIZE;
         cpuHistoryCount=Math.min(HISTORY_SIZE,cpuHistoryCount+1);
+    }
+    private static void appendRam(float value){
+        RAM_HISTORY[ramHistoryNext]=validOrMissing(value);
+        ramHistoryNext=(ramHistoryNext+1)%HISTORY_SIZE;
+        ramHistoryCount=Math.min(HISTORY_SIZE,ramHistoryCount+1);
+    }
+    private static float ramLoad(){
+        return totalMemory>0L?Math.min(100.0F,usedMemory*100.0F/totalMemory):-1.0F;
     }
     private static float validOrMissing(float value){
         return Float.isFinite(value)&&value>=0.0F?value:-1.0F;
@@ -169,7 +182,8 @@ public final class AiDiagnostics {
                 ordered(FPS_HISTORY,fpsHistoryCount,fpsHistoryNext,0.0F),
                 ordered(TPS_HISTORY,tpsHistoryCount,tpsHistoryNext,-1.0F),
                 ordered(GPU_HISTORY,gpuHistoryCount,gpuHistoryNext,-1.0F),
-                ordered(CPU_HISTORY,cpuHistoryCount,cpuHistoryNext,-1.0F));
+                ordered(CPU_HISTORY,cpuHistoryCount,cpuHistoryNext,-1.0F),
+                ordered(RAM_HISTORY,ramHistoryCount,ramHistoryNext,-1.0F));
     }
 
     private static float[] ordered(float[] source,int count,int next,float emptyValue){
@@ -223,5 +237,6 @@ public final class AiDiagnostics {
     public record Snapshot(int currentFps,int averageFps,int maxFps,int pingMs,
                            float serverTps,float serverTickMs,float gpuLoad,float cpuLoad,
                            long usedMemory,long totalMemory,int resolutionWidth,int resolutionHeight,
-                           float[] fpsHistory,float[] tpsHistory,float[] gpuHistory,float[] cpuHistory){}
+                           float[] fpsHistory,float[] tpsHistory,float[] gpuHistory,float[] cpuHistory,
+                           float[] ramHistory){}
 }
