@@ -306,7 +306,13 @@ public final class AiMemoryTelemetry {
     private static String formatDelta(long current, long previous) {
         if (current < 0L || previous < 0L) return "n/a";
         long delta = current - previous;
-        return (delta > 0L ? "+" : "") + formatBytes(delta);
+        if (delta == 0L) return "0.0MiB";
+        String sign = delta > 0L ? "+" : "-";
+        double absoluteMiB = Math.abs((double) delta) / 1048576.0;
+        if (absoluteMiB >= 1024.0) {
+            return sign + String.format(Locale.ROOT, "%.2fGiB", absoluteMiB / 1024.0);
+        }
+        return sign + String.format(Locale.ROOT, "%.1fMiB", absoluteMiB);
     }
 
     private static String formatPercent(double percent) {
