@@ -1,5 +1,8 @@
 package com.mortylovelly.minecraftai.client;
 
+import jdk.jfr.EventType;
+import jdk.jfr.FlightRecorder;
+import jdk.jfr.ValueDescriptor;
 import jdk.jfr.consumer.RecordedClass;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordedFrame;
@@ -46,6 +49,12 @@ public final class AiAllocationProfiler {
     private static volatile long totalSamples;
     private static volatile long totalEstimatedBytes;
     private static volatile long retainedSamples;
+    private static final LongAdder ALLOCATION_EVENTS = new LongAdder();
+    private static final LongAdder ALLOCATION_PARSE_FAILURES = new LongAdder();
+    private static final LongAdder OLD_OBJECT_EVENTS = new LongAdder();
+    private static final LongAdder OLD_OBJECT_PARSE_FAILURES = new LongAdder();
+    private static volatile String lastAllocationParseFailure = "";
+    private static volatile String lastOldObjectParseFailure = "";
 
     private AiAllocationProfiler() {}
 
@@ -55,16 +64,28 @@ public final class AiAllocationProfiler {
 
         try {
             int mappedSources = mapModSources();
+            EventType allocationType = findEventType("jdk.ObjectAllocationSample");
+            EventType oldObjectType = findEventType("jdk.OldObjectSample");
+            AiLogClient.addCustomLocal("INFO", "MEMORY-PROFILER-CAPABILITIES",
+                    "JFR event types: ObjectAllocationSample=" + (allocationType != null)
+                            + " fields={" + eventFields(allocationType) + "}; OldObjectSample="
+                            + (oldObjectType != null) + " fields={" + eventFields(oldObjectType) + "}.");
             RecordingStream stream = new RecordingStream();
             stream.setMaxAge(Duration.ofSeconds(30));
             stream.setMaxSize(16L * 1024L * 1024L);
 
-            stream.enable("jdk.ObjectAllocationSample")
-                    .with("throttle", "40/s")
-                    .withStackTrace();
-            stream.enable("jdk.OldObjectSample")
-                    .with("cutoff", "10 s")
-                    .withStackTrace();
+            if (allocationType != null) {
+                stream.enable("jdk.ObjectAllocationSample")
+                        .with("enabled", "true")
+                        .with("throttle", "40/s")
+                        .withStackTrace();
+            }
+            if (oldObjectType != null) {
+                stream.enable("jdk.OldObjectSample")
+                        .with("enabled", "true")
+                        .with("cutoff", "10 s")
+                        .withStackTrace();
+            }
 
             stream.onEvent("jdk.ObjectAllocationSample", AiAllocationProfiler::acceptAllocation);
             stream.onEvent("jdk.OldObjectSample", AiAllocationProfiler::acceptRetainedObject);
@@ -96,6 +117,27 @@ public final class AiAllocationProfiler {
         }
     }
 
+    private static EventType findEventType(String name) {
+        try {
+            for (EventType type : FlightRecorder.getFlightRecorder().getEventTypes()) {
+                if (name.equals(type.getName())) return type;
+            }
+        } catch (Throwable ignored) {
+            // Capability details are optional; the main telemetry remains available.
+        }
+        return null;
+    }
+
+    private static String eventFields(EventType type) {
+        if (type == null) return "unavailable";
+        StringBuilder fields = new StringBuilder();
+        for (ValueDescriptor field : type.getFields()) {
+            if (!fields.isEmpty()) fields.append(',');
+            fields.append(field.getName());
+        }
+        return fields.toString();
+    }
+
     private static int mapModSources() {
         int mapped = 0;
         for (ModContainer container : FabricLoader.getInstance().getAllMods()) {
@@ -119,6 +161,7 @@ public final class AiAllocationProfiler {
     }
 
     private static void acceptAllocation(RecordedEvent event) {
+        ALLOCATION_EVENTS.increment();
         try {
             long weight = Math.max(0L, event.getLong("weight"));
             if (weight == 0L) return;
@@ -131,12 +174,14 @@ public final class AiAllocationProfiler {
             stats.add(weight, className);
             totalSamples++;
             totalEstimatedBytes += weight;
-        } catch (Throwable ignored) {
-            // A malformed or unsupported JFR event must not interrupt the game.
+        } catch (Throwable error) {
+            ALLOCATION_PARSE_FAILURES.increment();
+            lastAllocationParseFailure = error.getClass().getSimpleName() + ": " + safe(error.getMessage());
         }
     }
 
     private static void acceptRetainedObject(RecordedEvent event) {
+        OLD_OBJECT_EVENTS.increment();
         try {
             String owner = resolveOwner(event.getStackTrace());
             long ageSeconds = Math.max(0L, event.getDuration("objectAge").toSeconds());
@@ -154,8 +199,9 @@ public final class AiAllocationProfiler {
             while (RETAINED_CANDIDATES.size() > MAX_RETAINED_CANDIDATES) {
                 RETAINED_CANDIDATES.pollFirst();
             }
-        } catch (Throwable ignored) {
-            // Old-object sampling is optional and must never affect normal gameplay.
+        } catch (Throwable error) {
+            OLD_OBJECT_PARSE_FAILURES.increment();
+            lastOldObjectParseFailure = error.getClass().getSimpleName() + ": " + safe(error.getMessage());
         }
     }
 
@@ -278,9 +324,18 @@ public final class AiAllocationProfiler {
                 + " samples=" + intervalSamples
                 + " weightedAllocation≈" + formatBytes(intervalBytes)
                 + " topMods={" + (top.isEmpty() ? "no samples" : top) + "}"
+                + " eventsReceived=" + ALLOCATION_EVENTS.sum()
+                + " parseFailures=" + ALLOCATION_PARSE_FAILURES.sum()
+                + (lastAllocationParseFailure.isEmpty() ? "" : " lastParseFailure={" + lastAllocationParseFailure + "}")
+                + " oldObjectEvents=" + OLD_OBJECT_EVENTS.sum()
+                + " oldObjectParseFailures=" + OLD_OBJECT_PARSE_FAILURES.sum()
+                + (lastOldObjectParseFailure.isEmpty() ? "" : " lastOldObjectFailure={" + lastOldObjectParseFailure + "}")
                 + " sessionSamples=" + totalSamples
                 + " sessionWeighted≈" + formatBytes(totalEstimatedBytes)
                 + ". Weighted allocation is not retained heap size.";
+            if (ALLOCATION_EVENTS.sum() == 0L && ALLOCATION_PARSE_FAILURES.sum() == 0L) {
+                message += " No JFR allocation events arrived; per-mod allocation ranking is unavailable in this run.";
+            }
         AiLogClient.addCustomLocal("INFO", "JFR-ALLOC", message);
 
         String candidate;
