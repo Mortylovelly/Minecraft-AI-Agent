@@ -206,7 +206,7 @@ public final class AiMemoryTelemetry {
             try {
                 for (String line : Files.readAllLines(procStatus, StandardCharsets.US_ASCII)) {
                     if (!line.startsWith("VmRSS:")) continue;
-                    String digits = line.replaceFirst("[^0-9]", "").trim();
+                    String digits = line.replaceAll("[^0-9]", "").trim();
                     if (!digits.isEmpty()) {
                         processWorkingSet = Long.parseLong(digits) * 1024L;
                         processMemorySource = "/proc/self/status";
