@@ -110,7 +110,7 @@ public abstract class MouseMixin {
             return;
         }
 
-        if (freeCursor || AiFreeCursor.isEnabled()) {
+        if (AiFreeCursor.isEnabled()) {
             Window w = client.getWindow();
             double[] cursor = getRawCursorPosition(window);
             double scaledMouseX = scaledX(cursor[0], w);
