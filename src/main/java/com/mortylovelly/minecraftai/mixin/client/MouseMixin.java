@@ -26,6 +26,18 @@ public abstract class MouseMixin {
         // Clear a drag capture even if a screen was opened or cursor mode changed mid-drag.
         if (action == GLFW.GLFW_RELEASE && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
                 && AiLogOverlay.mouseReleased(0.0, 0.0, button)) {
+            // Forward the release to third-party HUDs too, so their drag state cannot stick
+            // when the AI Agent Logs window was also capturing the pointer.
+            if (AiFreeCursor.isEnabled()
+                    && client.currentScreen == null
+                    && client.player != null
+                    && client.world != null
+                    && isCursorAvailable(window)) {
+                Window w = client.getWindow();
+                double[] cursor = getRawCursorPosition(window);
+                AiCursorEvents.dispatchMouseButton(
+                        scaledX(cursor[0], w), scaledY(cursor[1], w), button, action);
+            }
             ci.cancel();
             return;
         }
