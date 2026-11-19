@@ -1,5 +1,6 @@
 package com.mortylovelly.minecraftai.mixin.client;
 
+import com.mortylovelly.minecraftai.client.AiCursorEvents;
 import com.mortylovelly.minecraftai.client.AiFreeCursor;
 import com.mortylovelly.minecraftai.client.AiLogOverlay;
 import net.minecraft.client.MinecraftClient;
@@ -51,6 +52,15 @@ public abstract class MouseMixin {
             );
         }
 
+        // One mouse owner for every HUD using the AI Agent cursor: listeners receive
+        // the same scaled pointer coordinates as the built-in Logs HUD.
+        if (freeCursor && (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_RELEASE)) {
+            Window w = client.getWindow();
+            double[] cursor = getRawCursorPosition(window);
+            AiCursorEvents.dispatchMouseButton(
+                    scaledX(cursor[0], w), scaledY(cursor[1], w), button, action);
+        }
+
         // While free cursor mode or the Logs HUD owns the pointer, never click through
         // into the world (attack, break blocks, place blocks or change the hotbar).
         if (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_RELEASE) {
@@ -68,11 +78,18 @@ public abstract class MouseMixin {
             return;
         }
 
+        Window w = client.getWindow();
+        double scaledMouseX = scaledX(cursorX, w);
+        double scaledMouseY = scaledY(cursorY, w);
+
+        if (AiFreeCursor.isEnabled()) {
+            AiCursorEvents.dispatchCursorMove(scaledMouseX, scaledMouseY);
+        }
+
         if (AiLogOverlay.isOpen()) {
-            Window w = client.getWindow();
             AiLogOverlay.mouseDragged(
-                    scaledX(cursorX, w),
-                    scaledY(cursorY, w),
+                    scaledMouseX,
+                    scaledMouseY,
                     GLFW.GLFW_MOUSE_BUTTON_LEFT,
                     w.getScaledWidth(),
                     w.getScaledHeight()
@@ -93,7 +110,22 @@ public abstract class MouseMixin {
             return;
         }
 
-        if (AiLogOverlay.isOpen()) {
+        if (freeCursor || AiFreeCursor.isEnabled()) {
+            Window w = client.getWindow();
+            double[] cursor = getRawCursorPosition(window);
+            double scaledMouseX = scaledX(cursor[0], w);
+            double scaledMouseY = scaledY(cursor[1], w);
+            AiCursorEvents.dispatchMouseScroll(scaledMouseX, scaledMouseY, horizontal, vertical);
+            if (AiLogOverlay.isOpen()) {
+                AiLogOverlay.mouseScrolled(
+                        scaledMouseX,
+                        scaledMouseY,
+                        vertical,
+                        w.getScaledWidth(),
+                        w.getScaledHeight()
+                );
+            }
+        } else if (AiLogOverlay.isOpen()) {
             Window w = client.getWindow();
             double[] cursor = getRawCursorPosition(window);
             AiLogOverlay.mouseScrolled(
