@@ -20,7 +20,7 @@ import java.nio.DoubleBuffer;
 public abstract class MouseMixin {
     @Shadow @Final private MinecraftClient client;
 
-    @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "method_1601", at = @At("HEAD"), cancellable = true, remap = false)
     private void minecraftAiAgent$onMouseButton(long window, int button, int action, int modifiers, CallbackInfo ci) {
         // Clear a drag capture even if a screen was opened or cursor mode changed mid-drag.
         if (action == GLFW.GLFW_RELEASE && button == GLFW.GLFW_MOUSE_BUTTON_LEFT
@@ -58,7 +58,7 @@ public abstract class MouseMixin {
         }
     }
 
-    @Inject(method = "onCursorPos", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "method_1600", at = @At("HEAD"), cancellable = true, remap = false)
     private void minecraftAiAgent$onCursorPos(long window, double cursorX, double cursorY, CallbackInfo ci) {
         if (client.currentScreen != null
                 || client.player == null
@@ -83,7 +83,7 @@ public abstract class MouseMixin {
         ci.cancel();
     }
 
-    @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "method_1598", at = @At("HEAD"), cancellable = true, remap = false)
     private void minecraftAiAgent$onMouseScroll(long window, double horizontal, double vertical, CallbackInfo ci) {
         if (client.currentScreen != null
                 || client.player == null
